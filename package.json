@@ -1,0 +1,17 @@
+{
+  "name": "wechat-assistant-framework",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first WeChat assistant framework with fictional examples and isolated feature modules.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "wechat": "node src/main.js --wechat",
+    "demo": "node scripts/demo.js",
+    "test": "node scripts/test.js",
+    "check": "node scripts/check.js && npm test"
+  }
+}
