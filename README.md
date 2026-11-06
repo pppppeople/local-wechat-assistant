@@ -1,22 +1,81 @@
-# local-wechat-assistant
+# local-wechat-assistant · Two people, one assistant
 
-A local-first WeChat assistant framework with an owner-bound text transport, optional AI replies and reusable feature modules. The foreground host supports personal todos, expense entries, temporary notes and habit tracking. Node.js standard library only.
+A shared WeChat assistant for two: collect places you want to visit, answer a daily question privately until both are ready, play a compatibility challenge, and track a savings goal together. Local-first, with zero third-party dependencies.
 
-Examples and test inputs are fictional. No account configuration, real conversation, personal history, customer material, token, database, runtime state or original Git history is included.
+**两个人，一个助手。** 一起攒想去的地方、每天回答同一道题、玩默契挑战、记录共同储蓄。也提供双人决策、共同目标、约会/出行轮值等可接入模块。示例人物小林与小周、地点和测试输入全部虚构。
 
-## Run locally
+## Try the pair demo first
 
-Use Node.js 24+ from this directory. There are no packages to install:
+Use Node.js 24+. There are no packages to install:
 
 ```sh
-npm test
 npm run demo
 npm start
 ```
 
-The demo uses a temporary directory and a fake model, then removes its own temporary files. It never contacts WeChat, a model or a map service. `npm start` opens a local line-based console; ordinary text receives command help until you configure a model. Try these fictional commands:
+The demo actually runs four scenes through the same pair console used by `npm start`, printing both fictional participants' viewpoints:
+
+1. **Shared place box:** Xiaolin adds a fictional park; Xiaozhou sees it and marks it visited; both see the shared history.
+2. **Daily question:** both receive the same question. The first answer stays sealed; only the second answer unlocks both answers.
+3. **Compatibility challenge:** each chooses A–D independently; both receive the comparison and match count.
+4. **Shared savings:** each records a contribution; 30 + 50 toward a 200 yuan goal becomes 80 yuan, or 40%.
+
+The demo uses its own temporary runtime, a fixed fictional date and deterministic challenge question, then removes its temporary files even on failure. It makes no network, model or payment requests.
+
+**Public edition boundary:** two people are simulated as **two local roles in one console**, switching the speaker. This is a playable local experience, not two connected WeChat accounts. Connecting two real participants requires your own authorized protocol access and host wiring for identity, consent, notifications and visibility. This repository contains **no real-account relay**.
+
+中文：运行 `npm run demo` 可直接看完整双人四幕；`npm start` 可以自己操作。同一控制台切换小林与小周模拟两人，不是已联通两个真实微信账号。真实双人微信接入须自行准备协议并接线，本仓不含真实账号 relay。
+
+## Play in the local console
+
+The prompt shows `[小林] >` or `[小周] >`. Start as **小林 / Xiaolin (`owner`)**. Enter `切换 小周` or `/as friend` to become **小周 / Xiaozhou (`friend`)**; `切换 小林` or `/as owner` switches back. Enter `帮助` for commands; Ctrl-D exits. Roles reset to Xiaolin on restart; stored feature data remains in your configured runtime.
+
+Try this sequence in `npm start`:
 
 ```text
+想去箱添加：纸月公园
+切换 小周
+查看想去箱
+把纸月公园标记为去过
+切换 小林
+去过的地方
+每日一问
+每日一问答：星星纸船
+切换 小周
+每日一问揭晓
+每日一问答：月亮小屋
+切换 小林
+每日一问揭晓
+来一轮默契挑战
+默契答 B
+切换 小周
+来一轮默契挑战
+默契答 B
+切换 小林
+共同愿望：周末野餐 200元
+愿望贡献：30元
+切换 小周
+愿望贡献：50元
+共同愿望进度
+```
+
+| Play | Commands and behavior |
+| --- | --- |
+| Shared places / 想去箱 | `想去箱添加：纸月公园`, `查看想去箱`, `把纸月公园标记为去过`, `去过的地方`, `把纸月公园恢复为想去`. Both roles see the same places. After viewing a list, numbered commands use that role's recent list. The console saves names locally without a map provider. |
+| Daily question / 双人每日一问 | `每日一问`, `每日一问答：答案`, `每日一问揭晓`. Answers stay sealed until both respond; they can be revised before reveal. An incomplete day expires on the next Shanghai calendar day. |
+| Compatibility / 默契挑战 | `来一轮默契挑战` starts or shows the current round; `默契答 A` submits A–D. Both must answer before comparison. `默契战绩` shows totals; `结束默契挑战` cancels. Unfinished rounds expire after 24 hours. |
+| Shared savings / 共同储蓄 | `共同愿望：周末野餐 200元`, `愿望贡献：30元`, `共同愿望进度`. Each contribution belongs to the current role; `撤销愿望贡献：1` can undo only that role's own contribution. One active goal at a time; reaching the target completes it. **Text ledger only, no real funds or payment.** |
+
+Challenge results and place-added notifications appear for the recipient when you switch to that role or enter its next command. These notifications are local, in memory, and disappear on exit; they are not WeChat delivery. Daily-question reveal state and challenge statistics persist in their original stores; challenge result text is not retained after exit. Role switching is a simulation convenience, not authentication or confidentiality from the person operating the terminal. Both roles' inputs are visible in the shared terminal scrollback and records are stored locally.
+
+中文：揭晓前保密指助手不会向未答的一方返回另一方答案；共用终端的输入记录与本地存储并不提供账号级保密。双人模块沿用原有权限和可见性：储蓄只能撤销自己贡献，地点列表编号按各自角色记录。通知仅在本地会话显示，退出不保留通知队列。
+
+## Also supports personal features
+
+Todos, expense entries, temporary notes and habits remain available with their original commands and owner-only permissions. Use Xiaolin (`owner`) for these; Xiaozhou (`friend`) cannot read or change the owner's personal records.
+
+```text
+切换 小林
 记一下 明天买牛奶
 我的待办
 记账 12元 餐饮 示例午餐
@@ -27,52 +86,58 @@ The demo uses a temporary directory and a fake model, then removes its own tempo
 我的习惯
 ```
 
-Feature dates use the modules' documented `Asia/Shanghai` calendar rules. A console command writes only to the configured runtime. Keep private configuration outside this checkout. `.env.example` lists names and defaults; the application does **not** automatically load it. Export your values through your shell or service manager, then use `npm run wechat` for the foreground WeChat transport.
+Unmatched text receives command help unless you configure an optional model. The model receives only the current unmatched question and a fixed instruction. It cannot select commands, read saved answers or history, access local files, or invoke a computer executor.
 
-## Features and architecture
+## Included modules and wiring
 
 | Layer | Included behavior | Integration status |
 | --- | --- | --- |
-| Default assistant | Explicit command parsing, local todos with dependencies, expenses, expiring notes and habits | Connected to console and WeChat text host |
-| Optional model | One current-question chat-completion request, bounded output and timeout | Requires your HTTPS endpoint, model name and API credential; no tools or chat-history loading |
-| WeChat text transport | Polling, exact owner/account checks, message-ID deduplication, chunked replies and durable checkpoints | Requires your own authorized compatible protocol access; live acceptance remains unverified |
-| Feature library | Inventory and purchase records, reminders/parsers, saved places and route planning, inbox/tickets/gifts, work notes, learning, writing, image-processing adapters, text games and friend collaboration | Separate modules with injected stores/providers; most are **not** registered in the default host |
-| Recovery library | Classified JSON records, context leases, send-result checks, delivery outbox and execution journal | Reusable components; the default host uses its own compact transport checkpoint |
+| Pair console | Shared place box, daily question, compatibility challenge, shared savings; speaker switch and local notices | Playable now with `npm start` and `npm run demo`, using existing `shared-*` / `pair-*` stores and command parsers |
+| More pair modules | Pair decisions, shared goals, date/outing turns, wishes and other shared records | Exported library modules; require explicit host integration; not console commands yet |
+| Personal assistant | Todos with dependencies, expenses, expiring notes, habits | Available in the console for `owner` and in the single-owner WeChat text host |
+| Optional model | One current-question chat-completion request, bounded output and timeout | Requires your HTTPS endpoint, model name and API credential; no tools or history loading |
+| WeChat text transport | Exact owner/account binding, polling, message-ID deduplication, chunked replies, durable checkpoints | Single-owner transport only; requires your own authorized compatible protocol access; real account acceptance remains unverified |
+| Extension libraries | Reminders, inventory, route planning, inbox/tickets/gifts, work/learning/writing, media adapters, games, recovery utilities | Separate modules with injected stores/providers; not registered in the default host unless listed above |
 
-`src/main.js` wires `public-config`, `public-assistant`, the optional `public-model` and `public-wechat`. Feature records are written under `state/features/<feature>/` inside your runtime. Each feature keeps an index and any classified record bodies together. The text transport keeps binding, polling cursor, processed message IDs and pending output under `state/transport/`; it does not import another installation's state. See [architecture and recovery](docs/architecture.md) and [module inventory](docs/modules.md).
+`main.js` selects `public-pair-console` for local use and `public-assistant` for the single-owner WeChat transport. Speaker-switch text is interpreted **only** in the local console; a WeChat message cannot choose a pair role. The console calls the existing command parsers and stores directly, with no new pair data implementation. See [architecture and recovery](docs/architecture.md) and [module inventory](docs/modules.md).
 
-The default model receives only your current unmatched question and a fixed instruction. It cannot select commands, access local files or invoke a computer executor. The original multi-purpose private host, shell execution policy, personality/history loaders, professional-system integrations, mail bridge, operations dashboard, cross-project broker and private vendor packages are not part of this framework.
+The original private host, shell execution, personality/history loaders, professional-system integrations, mail bridge, operations dashboard, cross-project broker and private vendor packages are not included.
 
-## Configuration and prerequisites
+## Runtime and configuration
+
+Console writes persist under `state/features/<feature>/` inside your runtime, with an index and classified bodies when supported. The pair features use `shared-place`, `pair-daily-question`, `pair-challenge` and `pair-savings`; existing personal paths are unchanged. The text transport keeps account binding, cursor, message IDs and pending output under `state/transport/`. It never imports another installation's state. Feature dates follow each module's `Asia/Shanghai` calendar rules.
+
+Keep runtime and credentials private and outside Git. `.env.example` lists environment variable names and defaults; the application does **not** automatically load it. Export your own values through your shell or service manager.
 
 | Variable | Default / meaning |
 | --- | --- |
-| `WECHAT_ASSISTANT_HOME` | `${XDG_DATA_HOME}/wechat-assistant-framework/runtime`; when `XDG_DATA_HOME` is unset, use `${HOME}/.local/share`. A relative override resolves against the current working directory. |
+| `WECHAT_ASSISTANT_HOME` | `${XDG_DATA_HOME}/wechat-assistant-framework/runtime`; when `XDG_DATA_HOME` is unset, use `${HOME}/.local/share`. A relative override resolves against the current directory. |
 | `WECHAT_BASE_URL` | Empty. Your compatible WeChat protocol HTTPS base URL. |
 | `WECHAT_ACCOUNT_ID` | Empty. Your own bot account identity; required in WeChat mode. |
-| `WECHAT_OWNER_ID` | Empty. The one explicitly authorized sender; required in WeChat mode. |
+| `WECHAT_OWNER_ID` | Empty. The one authorized sender; required in WeChat mode. |
 | `WECHAT_TOKEN` | Empty. Your own protocol credential; required in WeChat mode. |
 | `MODEL_ENDPOINT` | Empty, model disabled. A complete HTTPS chat-completion URL. |
 | `MODEL_NAME`, `MODEL_API_KEY` | Empty. Required when the model endpoint is enabled. |
 | `MODEL_TIMEOUT_MS` | `30000`; integer from `1000` to `120000`. |
-| `AMAP_WEB_SERVICE_KEY` | Empty. Optional library integration only; explicitly pass your own key as `apiKey` to the map provider. The default host does not read it. |
+| `AMAP_WEB_SERVICE_KEY` | Empty. Optional library only; pass your own key as `apiKey` to a map provider. The console does not read it. |
 
-Supply and verify your own account authorization, compatible server and network access. This repository contains no QR login, account provisioning, account discovery, gateway installation, background-service installer or credential acquisition mechanism. The transport expects `ilink/bot/getupdates` and `ilink/bot/sendmessage`, text items, inbound message IDs and context tokens. See the [protocol contract](docs/architecture.md). Run one foreground consumer per account/runtime. A second consumer or another application using the same account can steal messages or race state writes; concurrent writers are unsupported.
+For the optional **single-owner** transport, configure your own account, then run `npm run wechat`. The adapter expects `ilink/bot/getupdates` and `ilink/bot/sendmessage`, text items, inbound message IDs and context tokens. There is no QR login, account provisioning/discovery, gateway installation, credential acquisition, second-account binding or relay. Integrators must authenticate both real participants outside message text and enforce consent/visibility before using pair APIs. See the [protocol contract](docs/architecture.md).
 
-The optional model expects the usual `messages` request and `choices[0].message.content` response; provider-specific protocols require an adapter. Image, map, friend and other advanced modules require their own explicit host integration and provider inputs. Friend APIs use generic `owner` / `friend` roles: the integrating host must authenticate both sides and enforce consent and visibility before calling them. No friend account, relay broker or notification recipient is configured here.
+Run one foreground consumer per account/runtime. Multiple consumers can steal messages or race state writes; concurrent writers are unsupported. Use separate runtimes for console simulation and real account bindings. The optional model expects a `messages` request and `choices[0].message.content` response; other protocols need an adapter.
 
 ## Privacy, testing and limits
 
-Local-first refers to local storage and configuration control. WeChat traffic leaves your computer; enabling a model sends the current question to your configured service. Optional map/image providers also send the inputs you explicitly provide. Consult your chosen providers' retention policies. Runtime records and context tokens are sensitive local data; they are not encrypted by this framework. Keep runtime private and outside Git, and use a separate runtime for each account binding.
+No real personal information, account configuration, conversation, customer material, token, database, runtime snapshot or original private Git history is included. Local-first means local storage and configuration control. Enabling WeChat sends traffic outside your computer; a configured model receives the current question; optional map/media providers receive explicitly supplied inputs. Consult your providers' retention policies. Runtime files and tokens are sensitive and are not encrypted by this framework.
 
-The transport checkpoints before invoking a feature or sending a chunk. A restart with an unresolved `executing` / `sending` operation stops for local inspection rather than repeating it. A saved `ready` result resumes only its remaining unsent chunks with stable client IDs. Automatic reconciliation of uncertain results, exactly-once external delivery, scheduler/broker wiring and live account acceptance are not provided. Server acceptance is not proof of recipient delivery. See [recovery instructions](docs/architecture.md).
+The WeChat transport checkpoints before feature execution or sending. A restart with an unresolved `executing` / `sending` operation stops for local inspection. A saved `ready` result resumes only unsent chunks with stable client IDs. Automatic uncertain-result reconciliation, exactly-once delivery, scheduler/broker wiring and live account acceptance are not provided. Server acceptance does not prove recipient delivery. See [recovery instructions](docs/architecture.md).
 
 ```sh
+npm test
 npm run check
 ```
 
-Tests run with a fresh temporary HOME and runtime, without inherited account/model credentials. They use fictional fixtures, mocked HTTP/model/map/media providers and temporary files. They do not contact a real account or model. Tests and the demo do not certify real WeChat connectivity, model quality, provider authorization or deployment. See [verification scope](SCAN.md).
+Tests run with an isolated temporary HOME and runtime, without inherited account/model credentials. Fictional fixtures cover pair-console switching, shared visibility, sealed answers, challenge notices, contribution totals, personal permissions, the actual console entrypoint, demo scenes and temporary-file cleanup, plus the existing module and transport suites. HTTP, model, map and media providers are mocked. Passing tests and the demo do not certify real WeChat connectivity, model quality, provider authorization or deployment. See [verification scope](SCAN.md).
 
-This is an independent framework, not an official WeChat product or SDK. Protocol availability depends on your own environment and account access. Use it only with accounts and data you are authorized to operate. The software is provided **AS IS**, without warranty. MIT covers project code; third-party services and any dependencies you add retain their own terms.
+中文：本版把双人玩法接到了默认本地控制台，单人待办、记账、临时信息和习惯仍按原权限可用。双人决策、共同目标、约会轮次等附带模块尚需使用者自行接入宿主。所有示例均为虚构；真实微信双账号、relay、通知送达与部署不在本地测试验收范围内。
 
-中文：本地运行的微信助手框架，默认提供本人绑定的文字收发、待办、记账、临时信息和习惯打卡；附带经过泛化的功能模块供二次接入。账号、模型及可选服务须本人配置，示例全部虚构，真实微信收发与部署尚未验收。
+This is an independent project, not an official WeChat product or SDK. Use only accounts and data you are authorized to operate. Provided **AS IS**, without warranty. Project code is MIT licensed and uses the Node.js standard library only; third-party services and any dependencies you add retain their own terms.

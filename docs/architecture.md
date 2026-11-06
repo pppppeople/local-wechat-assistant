@@ -1,18 +1,38 @@
 # Architecture and integration contract
 
-The host is deliberately small. `main.js` selects a console or WeChat transport; `public-assistant.js` parses explicit commands and calls the todo, expense, temporary-note or habit store. Only unmatched text can reach the optional model adapter. The model receives no tool catalog, feature results, identity configuration, saved records or previous conversation.
+`main.js` selects the playable pair console or the single-owner WeChat transport. `public-pair-console.js` handles local speaker selection and routes four pair features to their existing parsers/stores. `public-assistant.js` retains the todo, expense, temporary-note and habit routes with their original owner-only permissions. Only unmatched text can reach the optional model adapter. The model receives no tool catalog, feature results, identity configuration, saved records or previous conversation.
+
+## Local two-role experience
+
+`npm start` starts as fictional 小林 (`owner`); `切换 小周` or `/as friend` selects fictional 小周 (`friend`). `切换 小林` or `/as owner` switches back. The prompt names the active speaker. This is a trusted local simulation, not account authentication. The WeChat host never uses this switch parser and cannot acquire another role from message text. Personal commands work for `owner`; the existing stores refuse `friend` before accessing personal records.
+
+| Console route | Existing implementation | Runtime feature directory |
+| --- | --- | --- |
+| Place add/list/visited/restore | `shared-place-commands` + `shared-place-box` | `shared-place` |
+| Daily question/status/answer/reveal | `pair-daily-question-commands` + `pair-daily-question-store` | `pair-daily-question` |
+| Challenge/start/answer/stats/cancel | `pair-challenge-commands` + `pair-challenge-store` | `pair-challenge` |
+| Savings/create/contribute/progress/undo | `pair-savings-commands` + `pair-savings-store` | `pair-savings` |
+
+The place provider is explicitly unavailable in this console: names are saved locally without map lookups. Shared places keep side-specific recent-list references. Daily-question and savings binding is the fixed local simulation binding, scoped to that runtime. No account identity or real relay is implied. Daily answers remain sealed until both submit; incomplete days expire on the next Shanghai day. Challenge answers remain sealed until both submit or the round expires after 24 hours. Savings is a text ledger, with each participant able to revoke only their own contribution before completion.
+
+The place-added callback and challenge `onNotice` callback append only to local in-memory per-role display queues. Notices are consumed on a role switch or command and never sent over the network. Challenge comparison text is delivered by that callback; it is not discarded in favor of the store's acknowledgement. These queues disappear on exit; challenge statistics persist but its completed comparison text does not. Daily-question pending reveals use the existing durable `takePending` mechanism. All responses are rendered through the stores' existing visibility rules. Terminal inputs/scrollback and local files remain accessible to the local operator; this simulation does not provide account-level secrecy.
+
+`npm run demo` uses this same console with a temporary runtime and fixed fictional clock/question selection. It walks through both viewpoints for shared places, daily answers, a challenge and combined savings, and removes its own files in `finally`, including on failure. It makes no network or model calls. More pair modules (decisions, goals, date turns) remain libraries for explicit integration.
 
 ## Storage
 
 The default root is `${XDG_DATA_HOME}/wechat-assistant-framework/runtime`, falling back to `${HOME}/.local/share/wechat-assistant-framework/runtime`. `WECHAT_ASSISTANT_HOME` replaces the root; relative overrides resolve against the caller's current directory. No sibling projects or old credential locations are discovered.
 
 - `state/features/<feature>/state.json`: the feature's index, plus classified `records/` bodies when supported by that store.
+- Pair console feature names: `shared-place`, `pair-daily-question`, `pair-challenge`, `pair-savings`. Personal feature names remain `todo`, `expense`, `notes`, `habit`; their existing paths and schemas are unchanged. Speaker selection and local callback queues are in memory, not a parallel pair database.
 - `state/transport/checkpoint.json`: account/sender/base-URL binding, polling cursor, bounded processed IDs and a pending operation/output checkpoint. Context tokens stay in this private file until the pending result is completed.
 - `logs/`, `tmp/` and `backups/`: reserved for integrator-managed diagnostic, scratch and recovery material. The default host does not create them. Keep these purposes separate if you extend the host.
 
 The default host is serial. Feature-store constructors accept explicit paths; custom integrations must pass purpose-specific locations within their own private runtime. Do not share files between concurrent writers. Corrupt durable records fail visibly; some stores preserve corrupt records by quarantine. Runtime is not encrypted, and there is no automatic retention or backup service. Expiring notes apply their own expiry rules. Inspect and preserve unresolved state before any manual reconciliation.
 
 ## WeChat transport
+
+This optional transport supports one authorized owner, not the console's two-role experience. There is no real-account relay or two-account wiring. To connect two real participants, supply your own protocol access, authenticated role mapping, consent checks and notification wiring. Use a separate runtime from local simulation.
 
 Provide your own HTTPS base URL and compatible, authorized account. `ilink/bot/getupdates` receives `get_updates_buf` and `base_info.channel_version`. A successful JSON response contains `msgs` and optionally the next `get_updates_buf`. Each accepted text message requires:
 

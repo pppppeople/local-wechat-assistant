@@ -1,8 +1,8 @@
 # Module inventory
 
-Only the five files in Default host wire the foreground product. Other files are reusable libraries; presence in this inventory does not enable a route, scheduler, media download, friend relay or external service. Use explicit constructor paths/providers, authenticate the caller and preserve each module's restrictions before integrating it.
+The files in Default host wire the foreground product. The local pair console connects `shared-place-commands` / `shared-place-box`, `pair-daily-question-commands` / `pair-daily-question-store`, `pair-challenge-commands` / `pair-challenge-store` and `pair-savings-commands` / `pair-savings-store`. It also retains the four personal feature routes for `owner`. Other modules remain reusable libraries; presence here does not enable another route, scheduler, media download, real-account relay or external service. See [the console wiring and paths](architecture.md#local-two-role-experience).
 
-The modules and tests use generic `owner` / `friend` role keys and fictional examples. An untrusted message cannot choose its own side. No prior installation state should be migrated into these renamed schemas. Tests under `tests/` exercise independent module behavior; they do not certify the removed private host.
+The modules and tests use generic `owner` / `friend` role keys and fictional examples. In the trusted local console only, `切换 小周` or `/as friend` simulates the second role, with the current name in the prompt; the WeChat transport has no role-switch route. An untrusted network message cannot choose its own side. No prior installation state should be migrated into these renamed schemas. Tests cover independent modules and the exported console/transport hosts; they do not certify the removed private host or two real accounts.
 
 ## Personal records and productivity
 
@@ -260,6 +260,7 @@ The modules and tests use generic `owner` / `friend` role keys and fictional exa
 
 - [main.js](../src/main.js)
 - [public-assistant.js](../src/public-assistant.js)
+- [public-pair-console.js](../src/public-pair-console.js)
 - [public-config.js](../src/public-config.js)
 - [public-model.js](../src/public-model.js)
 - [public-wechat.js](../src/public-wechat.js)

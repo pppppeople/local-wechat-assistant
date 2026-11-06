@@ -2,7 +2,7 @@
   "name": "wechat-assistant-framework",
   "version": "0.1.0",
   "private": true,
-  "description": "A local-first WeChat assistant framework with fictional examples and isolated feature modules.",
+  "description": "Two people, one assistant: a playable local pair console with shared places, sealed daily questions, compatibility challenges and savings.",
   "license": "MIT",
   "engines": {
     "node": ">=24"
