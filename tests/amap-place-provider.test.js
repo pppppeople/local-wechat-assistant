@@ -192,14 +192,14 @@ test('AMap weather selects the requested cast, normalizes fields and rejects una
   const date = '2026-10-25';
   const forecast = { city: '戊城区区', reporttime: '2026-10-25 09:00:00', casts: [
     { date: '2026-10-24', dayweather: '雨' },
-    { date, dayweather: '晴', nightweather: '多云', daytemp: 28, nighttemp: 21, daywind: '北', daypower: 3 },
+    { date, dayweather: '晴', nightweather: '多云', daytemp: 28, nighttemp: 21, daywind: '北', daypower: 3, nightwind: '东', nightpower: '1-3' },
   ] };
   const { provider, requests } = fakeAmap(t, { status: '1', forecasts: [forecast] });
   const place = { adcode: '440106', district: '备用区', city: '备用市' };
   assert.deepEqual(await provider.weather(place, date), {
     city: '戊城区区', reportTime: forecast.reporttime, date,
     dayWeather: '晴', nightWeather: '多云', dayTemp: '28', nightTemp: '21',
-    dayWind: '北', dayPower: '3', windText: '北风3级',
+    dayWind: '北', dayPower: '3', nightWind: '东', nightPower: '1-3', windText: '北风3级',
   });
   assert.equal(requests[0].url.pathname, '/v3/weather/weatherInfo');
   assert.equal(requests[0].url.searchParams.get('city'), '440106');
@@ -210,7 +210,7 @@ test('AMap weather selects the requested cast, normalizes fields and rejects una
   forecast.casts = [{ date }];
   assert.deepEqual(await provider.weather(place, date), {
     city: '备用区', reportTime: '', date, dayWeather: '', nightWeather: '',
-    dayTemp: '', nightTemp: '', dayWind: '', dayPower: '', windText: '',
+    dayTemp: '', nightTemp: '', dayWind: '', dayPower: '', nightWind: '', nightPower: '', windText: '',
   });
   delete forecast.casts;
   await assert.rejects(provider.weather(place, date), /目标日期超出当前天气预报范围/);
@@ -328,7 +328,7 @@ test('open weather rejects invalid coordinates, missing dates and bad responses;
   response = { ok: true, json: async () => { throw jsonError; } };
   await assert.rejects(provider.weather(place, '2026-10-25'), (error) => error === jsonError);
   for (const [codes, text] of [
-    [[0], '晴'], [[45, 48], '雾'], [[51, 67], '有雨'],
+    [[0], '晴'], [[45, 48], '雾'], [[51, 67, 80, 81, 82], '有雨'],
     [[71, 86], '有雪'], [[95, 99], '雷雨'], [[-1, 4, 50, 68, 70, 87, 94, 'bad', undefined], '天气状况不明'],
   ]) {
     for (const code of codes) assert.equal(weatherCodeText(code), text, String(code));

@@ -1,0 +1,51 @@
+# 通用功能说明书与天气宿主接入
+
+公开版提供通用的渐进说明书，目前接入天气。每条天气回复，包括错误、设置回执、测试与早报，最后独占一行显示 `看用法回：天气说明`。仅内部跳过不生成回复。
+
+## 注册与回复
+
+`createFeatureManual({ now, ttlMs })` 创建注册表与进程内会话，默认 15 分钟无操作后过期。调用 `register({ triggerWord, aliases, intro, sections })` 注册：
+
+- `triggerWord` 是标准入口，`aliases` 是可选别名；天气使用 `天气说明` / `天气帮助`。
+- `intro` 是一句话简介；`sections` 是有序 `{ title, keywords, body }`。
+- 先只显示简介及编号目录。编号从 1 开始，标题与关键词精确匹配。
+- 选节后只显示该节；长节的 `body` 可写成短段数组，每次回 `继续` 才展开下一段。
+
+`select(side, text, { isCommand })` 返回说明书文本或 `null`。`footer(triggerWord, reply)` 追加固定页脚；已有相同结尾不重复追加。`exit(side)` 退出该角色会话。
+
+## 会话与命令优先级
+
+`owner` / `friend` 会话分别保存在内存，重启清空。不保存聊天历史，也不授权功能动作。其他文字退出说明书；已识别的其他功能命令应优先分发，调用 `exit(side)` 或传 `isCommand: true`，避免把命令当成章节关键词或待选城市。控制台切换角色保留各自会话，不会将一方的章节选择交给另一方。
+
+公开版 `public-assistant` 接入个人命令与天气，`public-pair-console` 先识别双人命令，再交给该处理器。说明书不调用模型；明确天气命令不会触发模型。
+
+## 天气说明目录
+
+1. 怎么查天气：`天气` 查询今日＋明日；`今日天气`、`明天天气` / `明日天气`、`后天天气` 查询指定日期。日期按上海日历计算。
+2. 怎么切换城市：首次没有默认城市，先提示选城；直接回城市名或 `设置天气城市：城市名`，解析成功后保存并立即补查原查询日期。两种角色各存各的城市。无法解析时明确报错，保留原设置与待选查询。
+3. 早报：时间与开关：双方都可独立执行 `开启天气早报` / `关闭天气早报`、`天气早报测试`。测试查询不占定时次数。推送需要宿主自备通道。
+4. 数据来源与说明：默认用 OpenStreetMap/Nominatim 解析地点及 Open-Meteo 天气；可注入 Amap provider，并沿用按坐标的 Open-Meteo 兜底。查不到不编造；Open-Meteo 全天预报不当作独立昼夜数据，缺失的风向风力、温度均明确标注。天气仅供参考，重要决策请核对当地官方预警。
+
+## 天气状态与调度
+
+`createWeatherStore({ runtime, env, stateFile })` 只保存每个角色的城市、待选查询、早报开关、首次选城提示及发送状态。默认路径是 runtime 内 `state/features/weather/state.json`，`WEATHER_STATE_FILE` 可覆盖，相对值基于 runtime；runtime 沿用 `WECHAT_ASSISTANT_HOME` / XDG 数据目录规则。显式 `stateFile` 优先。文件按私有权限原子写入，损坏时拒绝覆盖；不存预报正文或会话历史。单 runtime 只支持一个写入宿主。
+
+`createWeatherCommands({ store, provider, now, morningTime })` 接受现有 provider 的 `searchPlace(name)` / `weather(place, date)`。地点必须与城市元数据匹配且具备编码或坐标；不会把搜索第一项无条件当作城市。没有隐式环境默认城市。宿主调用 `selectInput(side, text)` 后将命令交给 `handle(side, command)`，结果为 `{ ok, reply }`；`briefing(side)` 生成今日＋明日早报。
+
+`createWeatherMorning({ store, weather, send, now, time, sides, log })` 返回 `tick()`，不创建定时器。`send(side, text, clientId)` 和调用频率均由宿主负责；默认角色为 `owner` / `friend`，单人宿主可指定 `sides: ['owner']`。默认时间为上海时间 08:00，`time` 或 `WEATHER_MORNING_TIME` 覆盖，必须是 `HH:MM`。`now` 返回毫秒时间戳，便于离线模拟。
+
+- 未选城时最多发送一次选城提示，选城后从次日开始早报；显式待选查询仍立即补查。
+- 启用状态默认允许调度。08:00 后重启可补发当天早报，12:00 起不补发；若配置中午或下午时间，仅在配置的那一分钟可执行。
+- 每角色每天先持久化 claim，再查询和发送；并发 tick、重启以及发送结果不确定时不自动重放。
+- 预报查不到记为 `unavailable`，发送失败记为 `failed`，跨截止时间记为 `expired`；一天内不重试。成功记为 `sent`，仅表示回调成功，不能证明用户收到了消息。
+- 本地控制台与默认文字宿主均不自动启动天气推送。README 给出注入示例；真实身份绑定、授权、定时器生命周期、发送回执由集成者实现。
+
+## 验证入口
+
+```sh
+node --test tests/feature-manual.test.js tests/weather.test.js tests/public-pair-console.test.js tests/amap-place-provider.test.js
+npm run demo
+npm run check
+```
+
+测试使用虚构角色、合成地点与天气及模拟发送；demo 第五幕按照要求输入苏州，所有预报均明确标注为离线模拟。默认控制台的网络 provider 合同由 mock 验证，测试与 demo 不证明实时天气可用、真实微信连通或消息送达。

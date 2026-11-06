@@ -128,12 +128,12 @@ test('npm start entrypoint displays speaker prompts and routes the four pair fea
   assert.match(result.stdout, /40%[\s\S]*已记录：80\.00元/);
 });
 
-test('demo runs four actual pair scenes with both viewpoints and removes its runtime', async () => {
+test('demo runs five actual pair scenes with both viewpoints and removes its runtime', async () => {
   const lines = [];
   const { runtime } = await demo({ log: text => lines.push(text) });
   assert.equal(fs.existsSync(runtime), false);
-  const scenes = lines.join('\n').split(/\n第[一二三四]幕 · /u).slice(1);
-  assert.equal(scenes.length, 4);
+  const scenes = lines.join('\n').split(/\n第[一二三四五]幕 · /u).slice(1);
+  assert.equal(scenes.length, 5);
   for (const scene of scenes) {
     assert.match(scene, /\[小林 视角\]/);
     assert.match(scene, /\[小周 视角\]/);
@@ -146,6 +146,11 @@ test('demo runs four actual pair scenes with both viewpoints and removes its run
   assert.match(scenes[2], /小林 本地通知[\s\S]*默契一致/);
   assert.match(scenes[2], /小周 本地通知[\s\S]*默契一致/);
   assert.match(scenes[3], /40%[\s\S]*已记录：80\.00元/);
+  assert.match(scenes[4], /天气.*每日早报（模拟）/);
+  assert.match(scenes[4], /先选一个天气城市[\s\S]*苏州｜2026-11-06 今日/);
+  assert.match(scenes[4], /小林 模拟发送[\s\S]*2026-11-07 08:00[\s\S]*苏州｜2026-11-07 今日[\s\S]*2026-11-08 明日预告[\s\S]*带伞/);
+  assert.equal(scenes[4].split('[小林 模拟发送]').length, 2);
+  assert.match(scenes[4], /模拟天气数据（离线 stub，非真实预报）/);
 });
 
 test('demo cleans temporary files even when output fails partway through', async t => {

@@ -100,10 +100,12 @@ function createAmapPlaceProvider({ apiKey = '', fetchImpl = global.fetch, timeou
       date: cast.date,
       dayWeather: String(cast.dayweather || ''),
       nightWeather: String(cast.nightweather || ''),
-      dayTemp: String(cast.daytemp || ''),
-      nightTemp: String(cast.nighttemp || ''),
+      dayTemp: String(cast.daytemp ?? ''),
+      nightTemp: String(cast.nighttemp ?? ''),
       dayWind: String(cast.daywind || ''),
       dayPower: String(cast.daypower || ''),
+      nightWind: String(cast.nightwind || ''),
+      nightPower: String(cast.nightpower || ''),
       windText: cast.daywind ? `${cast.daywind}风${cast.daypower || ''}级` : '',
     };
   }
@@ -182,8 +184,8 @@ function weatherCodeText(code) {
   if (value === 0) return '晴';
   if ([1, 2, 3].includes(value)) return '多云';
   if ([45, 48].includes(value)) return '雾';
-  if (value >= 51 && value <= 67) return '有雨';
-  if (value >= 71 && value <= 86) return '有雪';
+  if ((value >= 51 && value <= 67) || [80, 81, 82].includes(value)) return '有雨';
+  if ((value >= 71 && value <= 77) || [85, 86].includes(value)) return '有雪';
   if (value >= 95) return '雷雨';
   return '天气状况不明';
 }
@@ -262,17 +264,21 @@ function createOpenPlaceProvider({ fetchImpl = global.fetch, timeoutMs = 8000, n
     const payload = await getJson(url);
     const index = (payload.daily?.time || []).indexOf(date);
     if (index < 0) throw new Error('目标日期超出当前天气预报范围');
+    const rounded = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+      ? String(Math.round(Number(value))) : '';
+    const windSpeed = rounded(payload.daily.wind_speed_10m_max?.[index]);
     return {
       city: String(place.district || place.city || place.name),
       reportTime: String(payload.current?.time || ''),
       date,
-      dayWeather: weatherCodeText(payload.daily.weather_code?.[index]),
+      dayWeather: payload.daily.weather_code?.[index] == null ? '' : weatherCodeText(payload.daily.weather_code[index]),
+      weatherPeriod: 'daily',
       nightWeather: '',
-      dayTemp: String(Math.round(Number(payload.daily.temperature_2m_max?.[index]))),
-      nightTemp: String(Math.round(Number(payload.daily.temperature_2m_min?.[index]))),
+      dayTemp: rounded(payload.daily.temperature_2m_max?.[index]),
+      nightTemp: rounded(payload.daily.temperature_2m_min?.[index]),
       dayWind: '',
       dayPower: '',
-      windText: `最大风速约${Math.round(Number(payload.daily.wind_speed_10m_max?.[index]))}km/h`,
+      windText: windSpeed ? `最大风速约${windSpeed}km/h` : '',
     };
   }
 

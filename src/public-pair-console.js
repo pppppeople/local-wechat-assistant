@@ -19,13 +19,13 @@ const HELP = [
   '默契挑战：来一轮默契挑战；默契答 A（A–D）；默契战绩；结束默契挑战。双方答完才揭晓。',
   '共同储蓄：共同愿望：周末野餐 200元；愿望贡献：30元；共同愿望进度；撤销愿望贡献：1。',
   '储蓄仅为文本记账，不处理真实资金。通知只在本次本地会话切换或输入时显示，不发送到微信。',
-  '同时也支持个人功能（沿用模块权限，仅小林/owner 可用，小周不能读取或修改）：',
+  '个人待办、记账、临时信息与习惯仅小林/owner 可用，小周不能读取或修改；天气双方均可用：',
   PERSONAL_HELP,
 ].join('\n');
 
 // Local role selection is simulation, never authentication for a network caller.
 // Pair data is kept by the existing stores; only transient display notices live here.
-function createPairConsole({ runtime, model = null, now = () => Date.now(), random = Math.random }) {
+function createPairConsole({ runtime, model = null, now = () => Date.now(), random = Math.random, weatherProvider, weatherStore, weatherMorningTime }) {
   let side = 'owner';
   const notices = { owner: [], friend: [] };
   const notify = (recipient, text) => notices[recipient].push(text);
@@ -43,7 +43,7 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
     [parsePairChallengeCommand, createPairChallengeStore({ ...options('pair-challenge'), random, onNotice: notify })],
     [parsePairSavingsCommand, createPairSavingsStore({ ...options('pair-savings'), getBinding })],
   ];
-  const personal = createPublicAssistant({ runtime, model, helpText: HELP });
+  const personal = createPublicAssistant({ runtime, model, now, weatherProvider, weatherStore, weatherMorningTime, helpText: HELP });
   function drainNotices() {
     const pending = notices[side].splice(0);
     const question = daily.takePending(side);
@@ -51,6 +51,7 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
     return pending.map(text => `[${SIDE_NAMES[side]} 本地通知]\n${text}`).join('\n');
   }
   return {
+    weather: personal.weather,
     get speaker() { return SIDE_NAMES[side]; },
     get side() { return side; },
     async reply(text) {
@@ -66,11 +67,11 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
       // Take pending reveals before the command, so a new daily answer is not echoed twice.
       const pending = drainNotices();
       let reply;
-      if (!value || /^(?:帮助|help)$/iu.test(value)) reply = HELP;
+      if (!value || /^(?:帮助|help)$/iu.test(value)) { personal.exitManual(side); reply = HELP; }
       else {
         for (const [parse, store] of routes) {
           const command = parse(value);
-          if (command) { reply = await store.handle(side, command); break; }
+          if (command) { personal.exitManual(side); reply = await store.handle(side, command); break; }
         }
         if (reply === undefined) reply = await personal.reply(value, side);
       }
