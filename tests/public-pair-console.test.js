@@ -7,6 +7,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { createPairConsole } = require('../src/public-pair-console');
 const { createPublicAssistant } = require('../src/public-assistant');
+const { createWeatherStore } = require('../src/weather-store');
+const { createWeatherMorning } = require('../src/weather-morning');
 const { demo } = require('../scripts/demo');
 
 function fixture(t) {
@@ -161,4 +163,115 @@ test('demo cleans temporary files even when output fails partway through', async
   await assert.rejects(demo({ log: () => { if (++lines === 4) throw new Error('synthetic output failure'); } }), /synthetic output failure/);
   assert.ok(runtime);
   assert.equal(fs.existsSync(runtime), false);
+});
+
+// Use the actual public consumers and weather components, stubbing only the provider/model.
+function weatherHost(t, kind, side) {
+  const { runtime, options } = fixture(t);
+  const store = createWeatherStore({ runtime, env: {} });
+  const calls = [], modelCalls = [];
+  let at = Date.parse('2026-11-06T08:00:00+08:00');
+  const now = () => at;
+  const provider = {
+    attribution: '离线模拟天气',
+    async searchPlace(name) { return [{ name, adcode: 'demo-city' }]; },
+    async weather(place, date) {
+      calls.push([place.name, date]);
+      return { date, dayWeather: '晴' };
+    },
+  };
+  const create = kind === 'console' ? createPairConsole : createPublicAssistant;
+  const host = create({ ...options, now, weatherStore: store, weatherProvider: provider,
+    model: async text => { modelCalls.push(text); return '普通问答回落'; } });
+  return { store, provider, calls, modelCalls, host, now,
+    setTime: time => { at = Date.parse(time); },
+    async selectRole() { if (kind === 'console') await host.reply(`/as ${side}`); },
+    say: text => kind === 'console' ? host.reply(text) : host.reply(text, side) };
+}
+
+test('public host and console display all resolution failures without model fallback, preserve state, then accept retry', async t => {
+  for (const kind of ['host', 'console']) {
+    for (const side of ['owner', 'friend']) {
+      for (const type of ['city_reply', 'query']) {
+        for (const fails of ['empty', 'throw', 'wrong-city']) {
+          const f = weatherHost(t, kind, side);
+          await f.selectRole();
+          const sends = [];
+          const morning = createWeatherMorning({ store: f.store, weather: f.host.weather, now: f.now, sides: [side],
+            send: async (...args) => sends.push(args) });
+          if (type === 'city_reply') await morning.tick();
+          else await f.say('后天天气');
+          const before = fs.readFileSync(f.store.stateFile, 'utf8');
+          const search = f.provider.searchPlace;
+          f.provider.searchPlace = async () => {
+            if (fails === 'throw') throw Error('synthetic provider outage');
+            return fails === 'empty' ? [] : [{ name: '别的地方', adcode: 'demo-city' }];
+          };
+          const text = type === 'city_reply' ? '纸月城' : '纸月城明天天气';
+          assert.equal(f.host.weather.selectInput(side, text).type, type);
+          const reply = await f.say(text);
+          assert.equal(reply, '解析不了这个天气城市，请换个城市名再试；原设置未修改。\n看用法回：天气说明', `${kind}/${side}/${type}/${fails}`);
+          assert.equal(fs.readFileSync(f.store.stateFile, 'utf8'), before);
+          assert.deepEqual(f.calls, []);
+          f.provider.searchPlace = search;
+          const retry = await f.say(text);
+          assert.match(retry, new RegExp(`^已设置${side === 'owner' ? '小林' : '小周'}的天气城市：纸月城。`));
+          assert.equal(f.store.city(side), '纸月城'); assert.equal(f.store.pending(side), null);
+          assert.equal(f.store.city(side === 'owner' ? 'friend' : 'owner'), '');
+          if (type === 'city_reply') {
+            assert.match(retry, /次日/); assert.deepEqual(f.calls, []);
+            await morning.tick(); assert.equal(sends.length, 1);
+            f.setTime('2026-11-07T08:00:00+08:00'); await morning.tick(); assert.equal(sends.length, 2);
+          } else {
+            assert.match(retry, /纸月城｜2026-11-07 明日/);
+            assert.deepEqual(f.calls, [['纸月城', '2026-11-07']]);
+          }
+          assert.deepEqual(f.modelCalls, []);
+        }
+      }
+    }
+  }
+});
+
+test('public city queries leave manuals, work with no/query/morning pending, and retain next-day briefings', async t => {
+  for (const kind of ['host', 'console']) {
+    for (const side of ['owner', 'friend']) {
+      for (const pending of [null, 'query', 'morning']) {
+        const f = weatherHost(t, kind, side); await f.selectRole();
+        const sends = [];
+        const morning = createWeatherMorning({ store: f.store, weather: f.host.weather, now: f.now, sides: [side],
+          send: async (...args) => sends.push(args) });
+        if (pending === 'morning') await morning.tick();
+        if (pending === 'query') await f.say('后天天气');
+        await f.say('天气说明');
+        assert.match(await f.say('1'), /苏州天气/);
+        const text = pending ? '纸月城明天天气' : '纸月城天气';
+        const reply = await f.say(text);
+        assert.match(reply, new RegExp(`^已设置${side === 'owner' ? '小林' : '小周'}的天气城市：纸月城。`));
+        assert.deepEqual(f.calls.map(call => call[1]), pending ? ['2026-11-07'] : ['2026-11-06', '2026-11-07']);
+        assert.equal(reply.split('看用法回：天气说明').length, 2);
+        assert.equal(f.store.pending(side), null); assert.equal(f.store.city(side), '纸月城');
+        assert.equal(f.host.weather.selectInput(side, '1'), null);
+        if (pending === 'morning') {
+          await morning.tick(); assert.equal(sends.length, 1);
+          f.setTime('2026-11-07T08:00:00+08:00'); await morning.tick(); assert.equal(sends.length, 2);
+        }
+        assert.deepEqual(f.modelCalls, []);
+      }
+    }
+  }
+});
+
+test('public console pending weather preserves pair/personal commands and lets weather-bearing prose reach normal routing', async t => {
+  const f = weatherHost(t, 'console', 'owner');
+  await f.say('天气'); await f.say('天气说明');
+  assert.match(await f.say('查看想去箱'), /想去箱/);
+  assert.equal(f.host.weather.selectInput('owner', '1'), null);
+  await f.say('天气说明'); await f.say('记一下 示例待办');
+  assert.match(await f.say('我的待办'), /示例待办/);
+  assert.equal(f.host.weather.selectInput('owner', '1'), null);
+  assert.equal(await f.say('纸月城天气然后转告好友'), '普通问答回落');
+  assert.deepEqual(f.modelCalls, ['纸月城天气然后转告好友']);
+  assert.equal(f.store.city('owner'), ''); assert.equal(f.store.pending('owner').kind, 'query');
+  assert.deepEqual(f.calls, []);
 });

@@ -79,6 +79,8 @@ Both local roles can query public weather and independently save their own city 
 | --- | --- |
 | `天气` | Today + tomorrow |
 | `今日天气` / `明天天气` / `明日天气` / `后天天气` | Requested day's details |
+| `苏州天气` | Resolve and save the current role's city, confirm it, then show today + tomorrow |
+| `苏州今日天气` / `苏州明天天气` / `苏州明日天气` / `苏州后天天气` | Save and confirm the city, then show only the requested day; overrides an earlier pending query's dates |
 | `设置天气城市：城市名` | Resolve and save only the current role's city; an unresolved city leaves the old setting intact |
 | `开启天气早报` / `关闭天气早报` | Set only the current role's morning switch; delivery requires a host |
 | `天气早报测试` | Display today + tomorrow now, without consuming a scheduled delivery |
@@ -86,7 +88,9 @@ Both local roles can query public weather and independently save their own city 
 
 The console uses the existing keyless provider: OpenStreetMap/Nominatim resolves cities and Open-Meteo supplies forecasts. A host may inject `createPlaceProvider({ apiKey })` for Amap weather with Open-Meteo fallback. City lookup must match returned place metadata; unavailable or unmatched lookup is reported instead of guessing. Weather replies include day/night conditions, high/low temperatures, winds, rain/snow advice when supported, source attribution, and `看用法回：天气说明`. Open-Meteo supplies a daily summary; separate day/night conditions and wind direction/force are marked unavailable. Forecasts can change and are for reference only; consult official local warnings for decisions.
 
-中文：双方天气设置、待选城市和早报状态分别保存。没有默认城市；首次查天气先选城，选好立即补查。查不到就明确说明，缺失字段不补造。说明书先给「怎么查天气 / 怎么切换城市 / 早报：时间与开关 / 数据来源与说明」目录，选择后只展开该节；15 分钟无操作过期，其他功能命令自动退出，按角色隔离，重启清空说明书会话。
+City selection failures (no match, mismatched city or provider error) explicitly reply `解析不了这个天气城市，请换个城市名再试；原设置未修改。`, preserving both the saved city and pending selection for retry. The console and text host display the selected weather reply directly, without falling back to ordinary/model chat. Optional weather logs record only command type and failure category, without the city, message body or provider error details. Text containing `天气` is never treated as a bare city name.
+
+中文：双方天气设置、待选城市和早报状态分别保存。没有默认城市；首次查天气先选城，选好立即补查。也可直接回「苏州天气」保存本侧城市，先确认再查今日＋明日；「苏州今日天气」「苏州明天天气」／「苏州明日天气」「苏州后天天气」只查对应单日，覆盖原待选日期。选城失败明确提示、保留原设置和待选状态，可换名重试，不静默转普通对话。查不到就明确说明，缺失字段不补造。说明书先给「怎么查天气 / 怎么切换城市 / 早报：时间与开关 / 数据来源与说明」目录，选择后只展开该节；15 分钟无操作过期，其他功能命令自动退出，按角色隔离，重启清空说明书会话。
 
 **Morning briefings are an exported scheduling module.** Neither `npm start` nor the single-owner WeChat host starts a weather timer or real push channel. The offline demo calls `tick()` with a simulated clock and send callback. To integrate your own authorized channel:
 

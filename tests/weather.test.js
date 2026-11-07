@@ -119,7 +119,7 @@ test('pending queries accept explicit setting, isolate sides, and do not capture
   await f.say('天气'); await f.say('明天天气', 'friend');
   assert.equal(f.weather.selectInput('owner', '我的待办', { isCommand: true }), null);
   f.provider.searchPlace = async name => name === '随便聊聊' ? [] : [{ name, adcode: '1' }];
-  assert.match((await f.weather.handle('owner', f.weather.selectInput('owner', '随便聊聊'))).reply, /查不到/);
+  assert.match((await f.weather.handle('owner', f.weather.selectInput('owner', '随便聊聊'))).reply, /解析不了这个天气城市/);
   assert.equal(f.store.city('owner'), '');
   const friend = await f.say('设置天气城市：云桥城', 'friend');
   assert.match(friend.reply, /云桥城｜2026-11-07 明日/); assert.doesNotMatch(friend.reply, /2026-11-06 今日/);
@@ -290,4 +290,79 @@ test('demo uses no network even if fetch fails', async t => {
   const lines = [];
   await require('../scripts/demo').demo({ log: text => lines.push(text) });
   assert.match(lines.join('\n'), /第五幕 · 天气 \+ 每日早报（模拟）[\s\S]*小林 模拟发送/);
+});
+
+test('city-prefixed weather parses two-day and single-day queries without claiming combined requests', () => {
+  for (const [text, days] of [['纸月城天气', [0, 1]], ['纸月城今日天气', [0]],
+    ['纸月城明天天气', [1]], ['纸月城明日天气', [1]], ['纸月城后天天气', [2]]]) {
+    assert.deepEqual(parse(text), { type: 'query', city: '纸月城', days });
+  }
+  for (const text of ['“纸月城天气”', '纸月城天气然后转告好友', '纸月城天气，帮我转告', '纸月城天气\n再执行']) {
+    assert.equal(parse(text), null);
+  }
+});
+
+test('city-prefixed queries save only their role, override pending dates and confirm before forecast across restart', async t => {
+  for (const side of ['owner', 'friend']) {
+    for (const pending of [false, true]) {
+      for (const [text, dates] of [['纸月城天气', ['2026-11-06', '2026-11-07']],
+        ['纸月城今日天气', ['2026-11-06']], ['纸月城明天天气', ['2026-11-07']],
+        ['纸月城明日天气', ['2026-11-07']], ['纸月城后天天气', ['2026-11-08']]]) {
+        const f = fixture(t, { city: '' });
+        const other = side === 'owner' ? 'friend' : 'owner';
+        f.store.setCity(other, '星湾城');
+        f.store.waitForCity(other, { kind: 'query', days: [0] });
+        const otherBefore = JSON.parse(fs.readFileSync(f.stateFile)).roles[other];
+        if (pending) f.store.waitForCity(side, { kind: 'query', days: [2] });
+        const command = f.weather.selectInput(side, text);
+        assert.deepEqual(command, parse(text));
+        const result = await f.weather.handle(side, command);
+        assert.equal(result.ok, true);
+        assert.match(result.reply, new RegExp(`^已设置${side === 'owner' ? '小林' : '小周'}的天气城市：纸月城。\\n\\n纸月城｜`));
+        const reopened = createWeatherStore({ stateFile: f.stateFile });
+        assert.equal(reopened.city(side), '纸月城'); assert.equal(reopened.pending(side), null);
+        assert.deepEqual(JSON.parse(fs.readFileSync(f.stateFile)).roles[other], otherBefore);
+        assert.deepEqual(f.calls.filter(call => call[0] === 'weather').map(call => call[2]), dates);
+        assert.ok(f.calls.filter(call => call[0] === 'city').every(call => call[1] === '纸月城'));
+        assert.equal(result.reply.split('看用法回：天气说明').length, 2);
+      }
+    }
+  }
+});
+
+test('all city selection failures report categories without content and preserve settings and pending byte-for-byte', async t => {
+  for (const side of ['owner', 'friend']) {
+    for (const pending of [null, 'query', 'morning']) {
+      for (const type of ['set', 'city_reply', 'query']) {
+        for (const fails of ['empty', 'throw', 'wrong-city']) {
+          const f = fixture(t);
+          f.store.setCity('friend', '星湾城');
+          if (pending) f.store.waitForCity(side, { kind: pending, days: [2] });
+          const before = fs.readFileSync(f.stateFile, 'utf8');
+          f.provider.searchPlace = async () => {
+            if (fails === 'throw') throw Error('synthetic provider error containing 未知城');
+            return fails === 'empty' ? [] : [{ name: '别的地方', adcode: 'demo-city' }];
+          };
+          const result = await f.weather.handle(side, { type, city: '未知城', days: [0, 1] });
+          assert.equal(result.ok, false);
+          assert.equal(result.reply, '解析不了这个天气城市，请换个城市名再试；原设置未修改。\n看用法回：天气说明');
+          assert.equal(fs.readFileSync(f.stateFile, 'utf8'), before);
+          assert.deepEqual(f.logs, [`weather city resolution failed type=${type} reason=${fails === 'throw' ? 'provider_error' : 'no_match'}`]);
+          assert.equal(f.calls.filter(call => call[0] === 'weather').length, 0);
+        }
+      }
+    }
+  }
+});
+
+test('pending city selection excludes weather-bearing prose and preserves other command admission', async t => {
+  const f = fixture(t, { city: '' });
+  await f.say('天气');
+  for (const text of ['纸月城天气然后转告好友', '天气真好', '“纸月城天气”']) {
+    assert.equal(f.weather.selectInput('owner', text), null);
+  }
+  assert.equal(f.weather.selectInput('owner', '我的待办', { isCommand: true }), null);
+  assert.equal(f.store.pending('owner').kind, 'query');
+  assert.equal(f.weather.selectInput('owner', '纸月城天气').type, 'query');
+  assert.equal(f.weather.selectInput('owner', '纸月城').type, 'city_reply');
 });

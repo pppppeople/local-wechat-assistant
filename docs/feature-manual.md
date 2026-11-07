@@ -17,12 +17,12 @@
 
 `owner` / `friend` 会话分别保存在内存，重启清空。不保存聊天历史，也不授权功能动作。其他文字退出说明书；已识别的其他功能命令应优先分发，调用 `exit(side)` 或传 `isCommand: true`，避免把命令当成章节关键词或待选城市。控制台切换角色保留各自会话，不会将一方的章节选择交给另一方。
 
-公开版 `public-assistant` 接入个人命令与天气，`public-pair-console` 先识别双人命令，再交给该处理器。说明书不调用模型；明确天气命令不会触发模型。
+公开版 `public-assistant` 接入个人命令与天气，`public-pair-console` 先识别双人命令，再交给该处理器。说明书不调用模型；选中的天气输入直接返回天气结果，解析失败也明确呈现，不静默转普通问答或模型。含「天气」的文字不作裸城市候选；其他文字仍按现有路由处理。
 
 ## 天气说明目录
 
-1. 怎么查天气：`天气` 查询今日＋明日；`今日天气`、`明天天气` / `明日天气`、`后天天气` 查询指定日期。日期按上海日历计算。
-2. 怎么切换城市：首次没有默认城市，先提示选城；直接回城市名或 `设置天气城市：城市名`，解析成功后保存并立即补查原查询日期。两种角色各存各的城市。无法解析时明确报错，保留原设置与待选查询。
+1. 怎么查天气：`天气` 查询今日＋明日；`今日天气`、`明天天气` / `明日天气`、`后天天气` 查询指定日期。`苏州天气` 解析并保存本侧城市，先确认再查今日＋明日；`苏州今日天气`、`苏州明天天气` / `苏州明日天气`、`苏州后天天气` 则只查对应单日，覆盖原待选日期；没有待选或正在看说明书时也可使用。日期按上海日历计算。
+2. 怎么切换城市：首次没有默认城市，先提示选城；直接回城市名或 `设置天气城市：城市名`，解析成功后保存并立即补查原查询日期。两种角色各存各的城市。无匹配、返回其他城市或服务异常时回复「解析不了这个天气城市，请换个城市名再试；原设置未修改。」，保留原设置与待选状态，可换名重试。
 3. 早报：时间与开关：双方都可独立执行 `开启天气早报` / `关闭天气早报`、`天气早报测试`。测试查询不占定时次数。推送需要宿主自备通道。
 4. 数据来源与说明：默认用 OpenStreetMap/Nominatim 解析地点及 Open-Meteo 天气；可注入 Amap provider，并沿用按坐标的 Open-Meteo 兜底。查不到不编造；Open-Meteo 全天预报不当作独立昼夜数据，缺失的风向风力、温度均明确标注。天气仅供参考，重要决策请核对当地官方预警。
 
@@ -30,7 +30,7 @@
 
 `createWeatherStore({ runtime, env, stateFile })` 只保存每个角色的城市、待选查询、早报开关、首次选城提示及发送状态。默认路径是 runtime 内 `state/features/weather/state.json`，`WEATHER_STATE_FILE` 可覆盖，相对值基于 runtime；runtime 沿用 `WECHAT_ASSISTANT_HOME` / XDG 数据目录规则。显式 `stateFile` 优先。文件按私有权限原子写入，损坏时拒绝覆盖；不存预报正文或会话历史。单 runtime 只支持一个写入宿主。
 
-`createWeatherCommands({ store, provider, now, morningTime })` 接受现有 provider 的 `searchPlace(name)` / `weather(place, date)`。地点必须与城市元数据匹配且具备编码或坐标；不会把搜索第一项无条件当作城市。没有隐式环境默认城市。宿主调用 `selectInput(side, text)` 后将命令交给 `handle(side, command)`，结果为 `{ ok, reply }`；`briefing(side)` 生成今日＋明日早报。
+`createWeatherCommands({ store, provider, now, morningTime, log })` 接受现有 provider 的 `searchPlace(name)` / `weather(place, date)`。地点必须与城市元数据匹配且具备编码或坐标；不会把搜索第一项无条件当作城市。没有隐式环境默认城市。宿主调用 `selectInput(side, text)` 后将命令交给 `handle(side, command)`，结果为 `{ ok, reply }`；即使 `ok: false` 也应呈现 `reply`，不忽略或重投普通路由。可选 `log` 仅记录城市解析失败的命令类型与类别（`no_match` / `provider_error`），不含城市、消息正文或服务错误详情；`briefing(side)` 生成今日＋明日早报。
 
 `createWeatherMorning({ store, weather, send, now, time, sides, log })` 返回 `tick()`，不创建定时器。`send(side, text, clientId)` 和调用频率均由宿主负责；默认角色为 `owner` / `friend`，单人宿主可指定 `sides: ['owner']`。默认时间为上海时间 08:00，`time` 或 `WEATHER_MORNING_TIME` 覆盖，必须是 `HH:MM`。`now` 返回毫秒时间戳，便于离线模拟。
 
