@@ -28,7 +28,11 @@
 
 ## 天气状态与调度
 
-`createWeatherStore({ runtime, env, stateFile })` 只保存每个角色的城市、待选查询、早报开关、首次选城提示及发送状态。默认路径是 runtime 内 `state/features/weather/state.json`，`WEATHER_STATE_FILE` 可覆盖，相对值基于 runtime；runtime 沿用 `WECHAT_ASSISTANT_HOME` / XDG 数据目录规则。显式 `stateFile` 优先。文件按私有权限原子写入，损坏时拒绝覆盖；不存预报正文或会话历史。单 runtime 只支持一个写入宿主。
+`createWeatherStore({ runtime, env, stateFile, now })` 只保存每个角色的城市、待选查询、早报开关、首次选城提示及发送状态。默认路径是 runtime 内 `state/features/weather/state.json`，`WEATHER_STATE_FILE` 可覆盖，相对值基于 runtime；runtime 沿用 `WECHAT_ASSISTANT_HOME` / XDG 数据目录规则。显式 `stateFile` 优先。文件按私有权限原子写入，损坏时拒绝覆盖；不存预报正文或会话历史。单 runtime 只支持一个写入宿主。
+
+待选查询记录毫秒时间戳 `createdAt` / `expiresAt`，创建满 24 小时静默失效，重启保留期限，失败重试及早报 tick 不延长已有显式待答；缺少时间记录的旧待答在读取时失效。过期不删除已存城市或修改早报开关，裸城市文字按普通路由处理，可重新发「天气」开始选城。注入模拟时钟时，store 与 commands / morning / assistant 使用同一个 `now`。
+
+两种公开处理器均暴露 `contextLeases`：宿主用 `refresh({ senderId, token })` 更新已认证角色的上下文，以 `warningStatus({ senderId, token })` 判断提醒时机；仅在刷新提醒确认发送后调用 `recordWarning({ senderId, token })`。标记与租约存于 runtime 的 `state/transport/context-leases.json`。提醒后的同侧下一条入站在 24 小时内由 dispatch 一次性消费标记，再照常处理消息，仅跳过天气裸城市待答识别，保留天气待答原期限。新 token 不抹掉未消费标记，其他角色与控制台切换不消费本侧标记；默认宿主不自动调度或发送刷新提醒。直接使用天气模块的自定义宿主应先消费刷新标记，并向 `selectInput` 传入 `{ skipPendingCity: true }`。
 
 `createWeatherCommands({ store, provider, now, morningTime, log })` 接受现有 provider 的 `searchPlace(name)` / `weather(place, date)`。地点必须与城市元数据匹配且具备编码或坐标；不会把搜索第一项无条件当作城市。没有隐式环境默认城市。宿主调用 `selectInput(side, text)` 后将命令交给 `handle(side, command)`，结果为 `{ ok, reply }`；即使 `ok: false` 也应呈现 `reply`，不忽略或重投普通路由。可选 `log` 仅记录城市解析失败的命令类型与类别（`no_match` / `provider_error`），不含城市、消息正文或服务错误详情；`briefing(side)` 生成今日＋明日早报。
 

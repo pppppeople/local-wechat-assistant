@@ -11,7 +11,7 @@ async function demo({ log = console.log } = {}) {
   try {
     let at = Date.parse('2026-11-06T04:00:00Z');
     const now = () => at;
-    const weatherStore = createWeatherStore({ runtime, env: {} });
+    const weatherStore = createWeatherStore({ runtime, env: {}, now });
     const weatherProvider = {
       attribution: '模拟天气数据（离线 stub，非真实预报）',
       async searchPlace(name) { return name === '苏州' ? [{ name, adcode: 'demo-city' }] : []; },

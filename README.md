@@ -90,6 +90,14 @@ The console uses the existing keyless provider: OpenStreetMap/Nominatim resolves
 
 City selection failures (no match, mismatched city or provider error) explicitly reply `解析不了这个天气城市，请换个城市名再试；原设置未修改。`, preserving both the saved city and pending selection for retry. The console and text host display the selected weather reply directly, without falling back to ordinary/model chat. Optional weather logs record only command type and failure category, without the city, message body or provider error details. Text containing `天气` is never treated as a bare city name.
 
+Pending city selections store creation and expiry times and silently expire after 24 hours, including across restarts. Failures and morning ticks do not extend an existing query's lifetime. Undated legacy pending selections expire on access; saved cities and morning switches remain intact. After expiry, a bare city follows ordinary routing; use `天气` to start selection again or `设置天气城市：苏州` / `苏州天气` explicitly.
+
+If a host has sent a context-refresh reminder, the next message from that role within 24 hours consumes its one-shot refresh marker before feature dispatch. That message still follows normal command/chat routing, but cannot be consumed as a pending bare city; the weather pending selection keeps its original deadline. Without a valid refresh marker, an invalid pending city reply still receives the explicit failure above. Role switches in the local console are controls, not inbound messages.
+
+中文：天气待选城市自创建起 24 小时静默过期，失败重试不续期，缺少时间记录的旧待答不续用。刷新提醒确认发出后，同侧 24 小时内下一条消息优先消费一次性刷新标记，消息照常走命令或普通聊天，不误当待答城市；天气待答保留原期限。没有有效刷新标记时，答错城市仍明确提示失败。
+
+Refresh reminder scheduling/sending remains host-owned; the console and default text transport do not send reminders automatically. Both `createPublicAssistant` and `createPairConsole` expose `contextLeases`: call `refresh({ senderId: 'owner', token })` on authenticated inbound context updates, check `warningStatus({ senderId: 'owner', token })`, and call `recordWarning({ senderId: 'owner', token })` **only after confirmed reminder acceptance**. Use `friend` for the other role. Dispatch consumes markers automatically; a fresh token preserves an unconsumed marker. Leases and markers persist in the private runtime at `state/transport/context-leases.json`; use the same runtime and clock for the host and stores, with one writer.
+
 中文：双方天气设置、待选城市和早报状态分别保存。没有默认城市；首次查天气先选城，选好立即补查。也可直接回「苏州天气」保存本侧城市，先确认再查今日＋明日；「苏州今日天气」「苏州明天天气」／「苏州明日天气」「苏州后天天气」只查对应单日，覆盖原待选日期。选城失败明确提示、保留原设置和待选状态，可换名重试，不静默转普通对话。查不到就明确说明，缺失字段不补造。说明书先给「怎么查天气 / 怎么切换城市 / 早报：时间与开关 / 数据来源与说明」目录，选择后只展开该节；15 分钟无操作过期，其他功能命令自动退出，按角色隔离，重启清空说明书会话。
 
 **Morning briefings are an exported scheduling module.** Neither `npm start` nor the single-owner WeChat host starts a weather timer or real push channel. The offline demo calls `tick()` with a simulated clock and send callback. To integrate your own authorized channel:
@@ -184,7 +192,7 @@ npm test
 npm run check
 ```
 
-Tests run with an isolated temporary HOME and runtime, without inherited account/model credentials. Fictional fixtures cover pair-console switching, shared visibility, sealed answers, challenge notices, contribution totals, personal permissions, the actual console entrypoint, demo scenes and temporary-file cleanup, role-isolated weather/city selection, scheduler restart and failure controls, progressive manuals, and offline simulated weather delivery, plus the existing module and transport suites. HTTP, model, map and media providers are mocked. Passing tests and the demo do not certify real WeChat connectivity, model quality, provider authorization or deployment. See [verification scope](SCAN.md).
+Tests run with an isolated temporary HOME and runtime, without inherited account/model credentials. Fictional fixtures cover pair-console switching, shared visibility, sealed answers, challenge notices, contribution totals, personal permissions, the actual console entrypoint, demo scenes and temporary-file cleanup, role-isolated weather/city selection, refresh-reply priority and 24-hour expiry across restarts, scheduler restart and failure controls, progressive manuals, and offline simulated weather delivery, plus the existing module and transport suites. HTTP, model, map and media providers are mocked. Passing tests and the demo do not certify real WeChat connectivity, model quality, provider authorization or deployment. See [verification scope](SCAN.md).
 
 中文：本版把双人玩法接到了默认本地控制台，单人待办、记账、临时信息和习惯仍按原权限可用。双人决策、共同目标、约会轮次等附带模块尚需使用者自行接入宿主。所有示例均为虚构；真实微信双账号、relay、通知送达与部署不在本地测试验收范围内。
 

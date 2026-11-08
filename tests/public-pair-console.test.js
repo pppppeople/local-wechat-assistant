@@ -168,10 +168,10 @@ test('demo cleans temporary files even when output fails partway through', async
 // Use the actual public consumers and weather components, stubbing only the provider/model.
 function weatherHost(t, kind, side) {
   const { runtime, options } = fixture(t);
-  const store = createWeatherStore({ runtime, env: {} });
   const calls = [], modelCalls = [];
   let at = Date.parse('2026-11-06T08:00:00+08:00');
   const now = () => at;
+  const store = createWeatherStore({ runtime, env: {}, now });
   const provider = {
     attribution: '离线模拟天气',
     async searchPlace(name) { return [{ name, adcode: 'demo-city' }]; },
@@ -183,11 +183,86 @@ function weatherHost(t, kind, side) {
   const create = kind === 'console' ? createPairConsole : createPublicAssistant;
   const host = create({ ...options, now, weatherStore: store, weatherProvider: provider,
     model: async text => { modelCalls.push(text); return '普通问答回落'; } });
-  return { store, provider, calls, modelCalls, host, now,
+  return { runtime, store, provider, calls, modelCalls, host, now,
     setTime: time => { at = Date.parse(time); },
     async selectRole() { if (kind === 'console') await host.reply(`/as ${side}`); },
     say: text => kind === 'console' ? host.reply(text) : host.reply(text, side) };
 }
+
+test('refresh reply precedes pending city in both public consumers and roles, including after restart', async t => {
+  for (const kind of ['host', 'console']) {
+    for (const side of ['owner', 'friend']) {
+      const f = weatherHost(t, kind, side); await f.selectRole();
+      f.provider.searchPlace = async name => name === '苏州' ? [{ name, adcode: 'demo-city' }] : [];
+      await f.say('天气');
+      const pending = f.store.pending(side);
+      const input = { senderId: side, token: 'demo-context' };
+      f.host.contextLeases.refresh(input);
+      f.host.contextLeases.recordWarning(input); // Host confirms reminder acceptance.
+      assert.equal(f.host.contextLeases.stateFile, path.join(f.runtime, 'state', 'transport', 'context-leases.json'));
+      assert.equal(fs.statSync(f.host.contextLeases.stateFile).mode & 0o777, 0o600);
+      const create = kind === 'console' ? createPairConsole : createPublicAssistant;
+      const restarted = create({ runtime: f.runtime, now: f.now, weatherProvider: f.provider,
+        model: async text => { f.modelCalls.push(text); return '普通问答回落'; } });
+      restarted.contextLeases.refresh({ ...input, token: 'demo-new-context' });
+      if (kind === 'console') await restarted.reply(`/as ${side}`);
+      const say = text => kind === 'console' ? restarted.reply(text) : restarted.reply(text, side);
+      const reply = await say('好啊');
+      assert.doesNotMatch(reply, /解析不了这个天气城市/);
+      assert.equal(reply, '普通问答回落');
+      assert.deepEqual(f.modelCalls, ['好啊']);
+      assert.deepEqual(f.store.pending(side), pending);
+      assert.equal(f.store.city(side), '');
+      assert.deepEqual(f.calls, []);
+      assert.match(await say('苏州'), /已设置.*天气城市：苏州。/);
+      assert.equal(f.store.city(side), '苏州');
+      assert.equal(f.store.pending(side), null);
+      assert.equal(f.store.city(side === 'owner' ? 'friend' : 'owner'), '');
+      assert.equal(restarted.contextLeases.consumeRefreshReply(side), false);
+    }
+  }
+});
+
+test('without a fresh refresh marker, a bad city explicitly fails; expired pending follows normal chat', async t => {
+  for (const kind of ['host', 'console']) {
+    for (const side of ['owner', 'friend']) {
+      const f = weatherHost(t, kind, side); await f.selectRole();
+      f.provider.searchPlace = async () => [];
+      await f.say('天气');
+      const pending = f.store.pending(side);
+      assert.match(await f.say('好啊'), /解析不了这个天气城市，请换个城市名再试；原设置未修改。/);
+      assert.deepEqual(f.modelCalls, []);
+      assert.deepEqual(f.store.pending(side), pending);
+      const input = { senderId: side, token: 'demo-context' };
+      f.host.contextLeases.refresh(input); f.host.contextLeases.recordWarning(input);
+      f.setTime('2026-11-07T08:00:00+08:00'); // Both markers reach exactly 24 hours.
+      await f.say('天气'); // Fresh pending, but the old refresh marker must not suppress it.
+      assert.match(await f.say('好啊'), /解析不了这个天气城市/);
+      f.setTime('2026-11-08T08:00:00+08:00');
+      assert.equal(await f.say('好啊'), '普通问答回落');
+      assert.equal(f.store.pending(side), null);
+      assert.deepEqual(f.modelCalls, ['好啊']);
+      f.provider.searchPlace = async name => [{ name, adcode: 'demo-city' }];
+      assert.equal(await f.say('苏州'), '普通问答回落');
+      assert.equal(f.store.city(side), '');
+      assert.match(await f.say('苏州天气'), /已设置.*天气城市：苏州。/);
+    }
+  }
+});
+
+test('pair commands consume only their own refresh marker before routing', async t => {
+  const f = weatherHost(t, 'console', 'owner');
+  await f.say('天气');
+  const pending = f.store.pending('owner');
+  const input = { senderId: 'owner', token: 'demo-context' };
+  f.host.contextLeases.refresh(input); f.host.contextLeases.recordWarning(input);
+  await f.say('切换 小周'); await f.say('查看想去箱');
+  await f.say('切换 小林');
+  assert.match(await f.say('查看想去箱'), /想去箱/);
+  assert.deepEqual(f.store.pending('owner'), pending);
+  f.provider.searchPlace = async () => [];
+  assert.match(await f.say('好啊'), /解析不了这个天气城市/);
+});
 
 test('public host and console display all resolution failures without model fallback, preserve state, then accept retry', async t => {
   for (const kind of ['host', 'console']) {

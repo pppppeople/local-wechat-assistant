@@ -62,13 +62,13 @@ function createWeatherCommands({ provider, store, morningTime = '08:00', now = (
   const manual = createFeatureManual({ now });
   manual.register({ triggerWord: '天气说明', aliases: ['天气帮助'], intro: '查天气、选自己的城市，双方各自控制每日早报（发送需宿主接线）。', sections: [
     { title: '怎么查天气', keywords: ['查询', '查天气'], body: '回「天气」看今日＋明日；「今日天气」「明天天气」（或明日天气）「后天天气」看当日详情。也可回「苏州天气」查两日，或「苏州今日天气」「苏州明天天气」（或明日天气）「苏州后天天气」查单日；解析成功会保存城市，先确认再给预报。首次未设城市会先请你选城，选好立即补查。' },
-    { title: '怎么切换城市', keywords: ['城市', '切换城市'], body: '回「设置天气城市：城市名」即可更改自己的城市；待选时直接回城市名也可以。两人的设置互不覆盖。没有默认城市，首次必须自己选城。选城解析失败会明确提示，保留原设置与待选状态，可换个城市名重试。' },
+    { title: '怎么切换城市', keywords: ['城市', '切换城市'], body: '回「设置天气城市：城市名」即可更改自己的城市；待选时直接回城市名也可以。两人的设置互不覆盖。没有默认城市，首次必须自己选城。待选自创建起 24 小时静默过期，过期后可重发「天气」。选城解析失败会明确提示，保留原设置与未过期的待选状态，可换个城市名重试。' },
     { title: '早报：时间与开关', keywords: ['早报', '时间', '开关'], body: `双方各自早报，上海时间每天 ${morningTime}。各自可回「关闭天气早报」「开启天气早报」，或「天气早报测试」即时查看（不占定时次数）。时间由 WEATHER_MORNING_TIME 配置；宿主需接定时器与发送通道，控制台不自动推送。首次未选城只提示一次；选好从次日开始，不补当天正文。` },
     { title: '数据来源与说明', keywords: ['来源', '数据来源', '说明'], body: '默认使用 OpenStreetMap 解析地点及 Open-Meteo 天气；宿主可注入高德 provider，失败时按坐标用 Open-Meteo 兜底。查不到就明确说查不到；缺失字段标注暂无数据，不编造昼夜预报或风向风力。' },
   ] });
   const result = (ok, reply, extra = {}) => ({ ok, reply: manual.footer('天气说明', reply), ...extra });
   const cityPrompt = () => result(true, '先选一个天气城市吧。直接回城市名或「设置天气城市：城市名」都可以。', { needsCity: true });
-  function selectInput(side, text, { isCommand = false } = {}) {
+  function selectInput(side, text, { isCommand = false, skipPendingCity = false } = {}) {
     if (!['owner', 'friend'].includes(side)) return null;
     const command = parseWeatherCommand(text);
     const reserved = isCommand;
@@ -76,7 +76,7 @@ function createWeatherCommands({ provider, store, morningTime = '08:00', now = (
     if (reply) return { type: 'manual', reply };
     if (command) return command;
     // Weather-bearing text belongs to explicit query syntax, never a bare city.
-    if (!reserved && !String(text).includes('天气') && CITY_NAME.test(String(text).trim())) {
+    if (!skipPendingCity && !reserved && !String(text).includes('天气') && CITY_NAME.test(String(text).trim())) {
       try {
         if (store.pending(side)) return { type: 'city_reply', city: String(text).trim() };
       } catch { log('weather pending city state unavailable'); }

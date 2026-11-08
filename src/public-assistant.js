@@ -10,6 +10,7 @@ const { parseHabitCommand } = require('./habit-commands');
 const { createHabitStore } = require('./habit-store');
 const { createWeatherCommands } = require('./weather-commands');
 const { createWeatherStore } = require('./weather-store');
+const { createContextLeaseStore } = require('./context-lease-store');
 const { createOpenPlaceProvider } = require('./amap-place-provider');
 const { resultText } = require('./feature-result');
 
@@ -23,13 +24,17 @@ function createPublicAssistant({ runtime, model = null, helpText = HELP, now = (
     [parseHabitCommand, createHabitStore({ stateFile: stateFile('habit') })],
   ];
   const weather = createWeatherCommands({ provider: weatherProvider || createOpenPlaceProvider({ now }),
-    store: weatherStore || createWeatherStore({ runtime }), now,
+    store: weatherStore || createWeatherStore({ runtime, now }), now,
     morningTime: weatherMorningTime || process.env.WEATHER_MORNING_TIME || '08:00' });
+  const contextLeases = createContextLeaseStore({ runtime, now });
   return {
     weather,
+    contextLeases,
     exitManual: side => weather.exitManual(side),
-    async reply(text, side = 'owner') {
+    async reply(text, side = 'owner', { refreshReply } = {}) {
       if (!['owner', 'friend'].includes(side)) throw new Error('invalid assistant side');
+      // The pair console consumes at its own ingress, before pair-command routing.
+      refreshReply ??= contextLeases.consumeRefreshReply(side);
       const value = String(text || '').trim();
       if (!value || /^(?:帮助|help)$/iu.test(value)) { weather.exitManual(side); return helpText; }
       for (const [parse, store] of routes) {
@@ -40,7 +45,7 @@ function createPublicAssistant({ runtime, model = null, helpText = HELP, now = (
           return resultText(result);
         }
       }
-      const command = weather.selectInput(side, value);
+      const command = weather.selectInput(side, value, { skipPendingCity: refreshReply });
       if (command) return (await weather.handle(side, command)).reply;
       // Text generation cannot select tools or mutate feature stores.
       return model ? model(value) : helpText;

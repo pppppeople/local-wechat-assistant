@@ -3,6 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  REFRESH_REPLY_TTL_MS,
+  consumeContextRefreshReply,
   CONTEXT_WARNING_AGE_MS,
   CONTEXT_WARNING_SENDS,
   MAX_CONTEXT_AGE_MS,
@@ -16,6 +18,24 @@ const {
   recordProactiveSend,
   refreshContextLease,
 } = require('../src/context-lease');
+
+test('warning reply is role-local, survives inbound refresh, and is consumed once within 24 hours', () => {
+  const now = Date.parse('2026-11-06T00:00:00Z');
+  let leases = refreshContextLease({}, { senderId: 'owner', token: 'demo-old', now });
+  const unmarked = consumeContextRefreshReply(leases, { senderId: 'owner', now });
+  assert.equal(unmarked.consumed, false);
+  leases = recordContextLeaseWarning(leases, { senderId: 'owner', token: 'demo-old', now });
+  assert.equal(recordContextLeaseWarning(leases, { senderId: 'owner', token: 'demo-old', now: now + 1 }), leases);
+  assert.equal(consumeContextRefreshReply(leases, { senderId: 'friend', now }).consumed, false);
+  const refreshed = refreshContextLease(leases, { senderId: 'owner', token: 'demo-new', now: now + 1 });
+  const reply = consumeContextRefreshReply(refreshed, { senderId: 'owner', now: now + REFRESH_REPLY_TTL_MS - 1 });
+  assert.equal(reply.consumed, true);
+  assert.equal(consumeContextRefreshReply(reply.leases, { senderId: 'owner', now: now + 2 }).consumed, false);
+  assert.equal(refreshed.owner.refreshReplyExpiresAt, now + REFRESH_REPLY_TTL_MS);
+  const expired = consumeContextRefreshReply(refreshed, { senderId: 'owner', now: now + REFRESH_REPLY_TTL_MS });
+  assert.equal(expired.consumed, false);
+  assert.equal(expired.leases.owner.refreshReplyExpiresAt, undefined);
+});
 
 test('identifies context refresh failures across supported inputs', () => {
   assert.equal(isContextRefreshFailure(new Error('send ret=-2')), true);

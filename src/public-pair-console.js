@@ -52,6 +52,7 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
   }
   return {
     weather: personal.weather,
+    contextLeases: personal.contextLeases,
     get speaker() { return SIDE_NAMES[side]; },
     get side() { return side; },
     async reply(text) {
@@ -64,6 +65,7 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
         side = target;
         return [`当前说话人：${SIDE_NAMES[side]}（${side}，虚构角色）`, drainNotices()].filter(Boolean).join('\n');
       }
+      const refreshReply = personal.contextLeases.consumeRefreshReply(side);
       // Take pending reveals before the command, so a new daily answer is not echoed twice.
       const pending = drainNotices();
       let reply;
@@ -73,7 +75,7 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
           const command = parse(value);
           if (command) { personal.exitManual(side); reply = await store.handle(side, command); break; }
         }
-        if (reply === undefined) reply = await personal.reply(value, side);
+        if (reply === undefined) reply = await personal.reply(value, side, { refreshReply });
       }
       return [pending, reply, drainNotices()].filter(Boolean).join('\n');
     },

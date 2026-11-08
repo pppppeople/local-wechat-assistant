@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { parseWeatherCommand: parse, createWeatherCommands, formatWeather, shanghaiClock } = require('../src/weather-commands');
-const { createWeatherStore } = require('../src/weather-store');
+const { createWeatherStore, CITY_REPLY_TTL_MS } = require('../src/weather-store');
 const { createWeatherMorning, morningMinute } = require('../src/weather-morning');
 const { createPlaceProvider } = require('../src/amap-place-provider');
 const cast = date => ({ date, dayWeather: '小雨', nightWeather: '多云', dayTemp: '20', nightTemp: '12',
@@ -16,7 +16,7 @@ function fixture(t, options = {}) {
   const stateFile = path.join(root, 'weather', 'state.json');
   let at = Date.parse('2026-11-06T08:00:00+08:00');
   const now = () => at;
-  const store = createWeatherStore({ stateFile });
+  const store = createWeatherStore({ stateFile, now });
   if (options.city !== '') store.setCity('owner', '纸月城');
   const calls = [], logs = [], sends = [];
   const provider = { attribution: '模拟天气',
@@ -29,6 +29,42 @@ function fixture(t, options = {}) {
     setTime: time => { at = Date.parse(time); },
     say: (text, side = 'owner') => weather.handle(side, weather.selectInput(side, text) || parse(text)) };
 }
+test('pending city expires at 24 hours across restart, without clearing settings or the other role', t => {
+  const f = fixture(t);
+  f.store.waitForCity('owner', { kind: 'query', days: [2] });
+  const pending = f.store.pending('owner');
+  assert.equal(pending.createdAt, f.now());
+  assert.equal(pending.expiresAt, f.now() + CITY_REPLY_TTL_MS);
+  f.setTime('2026-11-07T07:59:59.999+08:00');
+  f.store.waitForCity('owner', { kind: 'morning', days: [0, 1] });
+  assert.deepEqual(f.store.pending('owner'), pending); // Timer does not renew a query.
+  f.store.waitForCity('friend', { kind: 'morning', days: [0, 1] });
+  const friend = f.store.pending('friend');
+  const reopened = createWeatherStore({ stateFile: f.stateFile, now: f.now });
+  assert.deepEqual(reopened.pending('owner'), pending);
+  f.setTime('2026-11-07T08:00:00+08:00');
+  assert.equal(reopened.pending('owner'), null);
+  assert.equal(JSON.parse(fs.readFileSync(f.stateFile)).roles.owner.pending, undefined);
+  assert.equal(reopened.city('owner'), '纸月城');
+  assert.deepEqual(reopened.pending('friend'), friend);
+  reopened.waitForCity('owner', { kind: 'morning', days: [0, 1] });
+  assert.equal(reopened.pending('owner').createdAt, f.now());
+  f.setTime('2026-11-08T08:00:00+08:00');
+  assert.equal(reopened.pending('owner'), null);
+});
+
+test('undated legacy pending expires silently and a new query gets its own lifetime', t => {
+  const f = fixture(t);
+  f.store.waitForCity('owner', { kind: 'query', days: [2] });
+  const state = JSON.parse(fs.readFileSync(f.stateFile));
+  delete state.roles.owner.pending.createdAt;
+  delete state.roles.owner.pending.expiresAt;
+  fs.writeFileSync(f.stateFile, JSON.stringify(state));
+  assert.equal(f.store.pending('owner'), null);
+  assert.equal(f.store.city('owner'), '纸月城');
+  f.store.waitForCity('owner', { kind: 'query', days: [0] });
+  assert.equal(f.store.pending('owner').expiresAt, f.now() + CITY_REPLY_TTL_MS);
+});
 test('weather commands parse exact dates, malformed city settings and avoid prose/quoted/combined requests', () => {
   for (const [text, result] of [
     ['天气', { type: 'query', days: [0, 1] }], ['今日天气', { type: 'query', days: [0] }],
@@ -106,7 +142,7 @@ test('no implicit Shanghai: first query prompts, bare city persists and complete
   const first = await f.say('后天天气');
   assert.match(first.reply, /直接回城市名或「设置天气城市：城市名」/);
   assert.equal(first.needsCity, true); assert.equal(f.calls.length, 0);
-  const reopened = createWeatherCommands({ store: createWeatherStore({ stateFile: f.stateFile }), provider: f.provider,
+  const reopened = createWeatherCommands({ store: createWeatherStore({ stateFile: f.stateFile, now: f.now }), provider: f.provider,
     now: () => Date.parse('2026-11-06T08:01:00+08:00') });
   const command = reopened.selectInput('owner', '星湾城'); assert.equal(command.type, 'city_reply');
   const result = await reopened.handle('owner', command);
@@ -202,12 +238,15 @@ test('morning switches and test queries belong to each role independently', asyn
   assert.equal(fs.readFileSync(f.stateFile, 'utf8'), before);
   await f.say('开启天气早报'); await f.scheduler().tick(); assert.equal(f.sends.length, 2);
 });
-test('unset morning prompts once across restarts, explicit query is preserved and morning starts tomorrow', async t => {
+test('unset morning prompts once across restarts, expired query can restart and morning starts tomorrow', async t => {
   const f = fixture(t, { city: '' });
   await f.say('后天天气'); await f.scheduler().tick();
   assert.equal(f.store.pending('owner').kind, 'query');
   assert.equal(f.sends.length, 1); assert.match(f.sends[0][1], /先选/);
   f.setTime('2026-11-07T08:00:00+08:00'); await f.scheduler().tick(); assert.equal(f.sends.length, 1);
+  assert.equal(f.store.pending('owner'), null);
+  assert.equal(f.weather.selectInput('owner', '纸月城'), null);
+  assert.equal((await f.say('后天天气')).needsCity, true);
   assert.match((await f.say('纸月城')).reply, /2026-11-09 后天/);
   await f.scheduler().tick(); assert.equal(f.sends.length, 1);
   f.setTime('2026-11-08T08:00:00+08:00'); await f.scheduler().tick(); assert.equal(f.sends.length, 2);
@@ -319,7 +358,7 @@ test('city-prefixed queries save only their role, override pending dates and con
         const result = await f.weather.handle(side, command);
         assert.equal(result.ok, true);
         assert.match(result.reply, new RegExp(`^已设置${side === 'owner' ? '小林' : '小周'}的天气城市：纸月城。\\n\\n纸月城｜`));
-        const reopened = createWeatherStore({ stateFile: f.stateFile });
+        const reopened = createWeatherStore({ stateFile: f.stateFile, now: f.now });
         assert.equal(reopened.city(side), '纸月城'); assert.equal(reopened.pending(side), null);
         assert.deepEqual(JSON.parse(fs.readFileSync(f.stateFile)).roles[other], otherBefore);
         assert.deepEqual(f.calls.filter(call => call[0] === 'weather').map(call => call[2]), dates);

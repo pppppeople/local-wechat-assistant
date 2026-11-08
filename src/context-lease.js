@@ -4,6 +4,7 @@ const MAX_CONTEXT_AGE_MS = 20 * 60 * 60 * 1000;
 const MAX_PROACTIVE_SENDS = 8;
 const CONTEXT_WARNING_AGE_MS = 18 * 60 * 60 * 1000;
 const CONTEXT_WARNING_SENDS = 6;
+const REFRESH_REPLY_TTL_MS = 24 * 60 * 60 * 1000;
 
 function refreshContextLease(leases, { senderId, token, now = Date.now() }) {
   if (!senderId || !token) return leases;
@@ -13,6 +14,9 @@ function refreshContextLease(leases, { senderId, token, now = Date.now() }) {
       token,
       updatedAt: new Date(now).toISOString(),
       proactiveSends: 0,
+      // An inbound token refresh must not erase an unconsumed warning reply.
+      ...(leases?.[senderId]?.refreshReplyExpiresAt !== undefined
+        ? { refreshReplyExpiresAt: leases[senderId].refreshReplyExpiresAt } : {}),
     },
   };
 }
@@ -67,8 +71,17 @@ function recordContextLeaseWarning(leases, { senderId, token, now = Date.now() }
     [senderId]: {
       ...lease,
       warningSentAt: new Date(now).toISOString(),
+      refreshReplyExpiresAt: now + REFRESH_REPLY_TTL_MS,
     },
   };
+}
+
+function consumeContextRefreshReply(leases, { senderId, now = Date.now() }) {
+  const expiry = leases?.[senderId]?.refreshReplyExpiresAt;
+  if (expiry === undefined) return { leases, consumed: false };
+  const next = { ...leases, [senderId]: { ...leases[senderId] } };
+  delete next[senderId].refreshReplyExpiresAt;
+  return { leases: next, consumed: Number.isFinite(expiry) && now < expiry };
 }
 
 function invalidateContextLease(leases, { senderId, token, now = Date.now() }) {
@@ -94,6 +107,8 @@ function contextRefreshError(reason) {
 }
 
 module.exports = {
+  REFRESH_REPLY_TTL_MS,
+  consumeContextRefreshReply,
   CONTEXT_WARNING_AGE_MS,
   CONTEXT_WARNING_SENDS,
   MAX_CONTEXT_AGE_MS,
