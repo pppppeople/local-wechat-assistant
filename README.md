@@ -139,7 +139,7 @@ Todos, expense entries, temporary notes and habits remain available with their o
 我的习惯
 ```
 
-Unmatched text receives command help unless you configure an optional model. By default that model receives only the current unmatched question and a fixed instruction, with no tools. The optional quota fallback below adds bounded same-side context and reviewed feature calls; neither model gets local-file or computer access.
+Unmatched text receives command help unless you configure an optional model. Ordinary fast lanes may receive bounded same-side context, with no tools; the no-fallback L2/off path receives only the current unmatched question and a fixed instruction. Optional quota fallback adds its existing reviewed feature calls; neither model gets local-file or computer access.
 
 ## Included modules and wiring
 
@@ -171,9 +171,29 @@ With fallback enabled, both models receive up to 12 recent same-side entries fro
 
 中文：配置自己的 DeepSeek key 后，明确的主模型额度耗尽才启用兜底。单步功能复用公开版现有能力和权限；提醒等未接入功能只进入待处理，恢复后不会自动执行。输入「降级说明」可按章节查看用法。
 
+## Ordinary chat lanes and batching
+
+Ordinary primary-model text uses three conservative lanes, enabled by default. `WECHAT_CHAT_LANES=off` (also `false` or `0`, case-insensitive) skips classification, pending probes and speculative calls, using the baseline public text path. This runtime switch does not disable batching, stage budgets or quota fallback.
+
+- **L0:** short self-contained greetings and acknowledgements use one no-tool request with strict `{reply, needs_tool}` output. A tool requirement, malformed output or unsupported execution claim discards the draft and falls back to L2.
+- **L1:** narrowly matched stable questions, opinions and feelings start the draft, request understanding and independent ordinary-eligibility check concurrently. Both eligibility checks must pass, followed by the local format/execution-claim gate. Reviewers see the original text and same-side history, never the draft or a personality profile.
+- **L2:** unknown text/state, pending feature replies, previous assistant questions, fragments, numbers/time, links/media and execution requests keep the existing command/fallback/text routing. The primary model still cannot execute features. Enabled host probes cover weather/manual state and, in the console, daily questions, challenges and place selections/recent lists; unconnected libraries do not add probes.
+
+The HTTP endpoint must accept `tool_choice: "none"` and strict `response_format: {type: "json_schema", ...}` for speculative calls. No tools are registered; unexpected function/tool responses are rejected. Fast drafts are single-attempt and never saved as conversation on rejection. HTTP calls are stateless; there is no model thread to resume. Custom `model(text, options)` callbacks must honor stage timeouts, deadlines, schemas and the no-tool contract. The stock adapter enforces them.
+
+Custom weather stores need a read-only boolean `hasPending(side)` probe to enable fast lanes and batching. Missing or invalid probe results keep requests on the baseline route and bypass batching.
+
+The single-owner WeChat host persistently batches ordinary text after **1 second of quiet**, resetting silence on each fragment while flushing within **3.5 seconds of the first arrival**. Every nonblank text item in a message, all message IDs and attachment provenance are retained, including buffered recovery; known feature commands stay separate. Polling continues while the serial worker runs. The local console treats each submitted line as one request and does not batch. Neither path gains media download or interpretation.
+
+Primary model stages allow **40 seconds** for understanding/review and **60 seconds** for an ordinary answer; the exported policy reserves **120 seconds** for result planning, which this host does not implement. Batching, queueing, speculation, L2 fallback and pure-stage retries share **150 seconds from first accepted ingress** for primary generation and later dispatch. This is **not an end-to-end hard deadline**: an already invoked operation, transport cleanup and delivery retain their existing lifecycle and actual timing. Only pure model stages may retry once, on a fresh stateless call, before any feature dispatch; auth, quota, budget and unexpected-tool failures never retry. DeepSeek retains its separate six-call/180-second fallback budget.
+
+Visible replies now retain a bounded same-side transcript in `state/chat/threads.json` even without DeepSeek. Fast lanes may send its last 12 entries to the configured model; the no-fallback L2/off path retains its original current-text-only input. Fallback-enabled L2 and both fallback providers retain their existing same-side history contract. Storage remains 24 entries per account/sender/role, with a 30-day inactive expiry on reading; this does not automatically erase disk files. No external or other-role history is loaded.
+
+The CLI emits body-free `model timing` and `chat timing` records to stderr, including stage/attempt, lane/reason/fallback and duration. WeChat also records batch/queue/delivery durations and server acceptance, using a random trace ID rather than account/sender IDs. These diagnostics do not establish recipient delivery. The 52 fictional offline cases and baseline differential tests run in `npm run check`; they establish wiring and safety boundaries, not real-model quality, production hit rates or measured speed improvements. See [the detailed contract](docs/chat-performance.md).
+
 ## Runtime and configuration
 
-Console writes persist under `state/features/<feature>/` inside your runtime, with an index and classified bodies when supported. The pair features use `shared-place`, `pair-daily-question`, `pair-challenge` and `pair-savings`; weather settings and per-role delivery status use `state/features/weather/state.json`; existing personal paths are unchanged. The text transport keeps account binding, cursor, message IDs and pending output under `state/transport/`. It never imports another installation's state. Feature dates follow each module's `Asia/Shanghai` calendar rules. When fallback is enabled, `state/model-fallback/codex-quota.json` stores breaker state, `state/model-fallback/operations/` stores per-turn execution records, `queues/model-fallback/pending.jsonl` stores deferred requests, and `state/chat/threads.json` stores bounded same-side transcripts. Pending requests and operation records are not automatically replayed or cleaned up.
+Console writes persist under `state/features/<feature>/` inside your runtime, with an index and classified bodies when supported. The pair features use `shared-place`, `pair-daily-question`, `pair-challenge` and `pair-savings`; weather settings and per-role delivery status use `state/features/weather/state.json`; existing personal paths are unchanged. The text transport keeps account binding, cursor, message IDs, buffered/queued batches and pending output under `state/transport/`. It never imports another installation's state. Feature dates follow each module's `Asia/Shanghai` calendar rules. Bounded same-side transcripts live in `state/chat/threads.json`. When fallback is enabled, `state/model-fallback/codex-quota.json` stores breaker state, `state/model-fallback/operations/` stores per-turn execution records and `queues/model-fallback/pending.jsonl` stores deferred requests. Deferred fallback requests and operation records are not automatically replayed or cleaned up.
 
 Keep runtime and credentials private and outside Git. `.env.example` lists environment variable names and defaults; the application does **not** automatically load it. Export your own values through your shell or service manager, or explicitly load your own ignored `.env` with Node 24:
 
@@ -195,7 +215,8 @@ No private installation path or env file is discovered or sourced automatically.
 | `WECHAT_TOKEN` | Empty. Your own protocol credential; required in WeChat mode. |
 | `MODEL_ENDPOINT` | Empty, model disabled. A complete HTTPS chat-completion URL. |
 | `MODEL_NAME`, `MODEL_API_KEY` | Empty. Required when the model endpoint is enabled. |
-| `MODEL_TIMEOUT_MS` | `30000`; integer from `1000` to `120000`. Primary recovery probes use 15000 ms. |
+| `MODEL_TIMEOUT_MS` | `30000`; integer from `1000` to `120000`, for direct adapter calls. The ordinary host applies the stage limits above; primary recovery probes use 15000 ms. |
+| `WECHAT_CHAT_LANES` | `on`; `off` / `false` / `0` skip fast lanes and state probes at runtime. |
 | `DEEPSEEK_API_KEY` | Empty, fallback disabled. Your own key; requires a configured primary model. |
 | `DEEPSEEK_MODEL` | `deepseek-flash`; override with a model supported by your DeepSeek account. Requests use the fixed official HTTPS chat-completion endpoint. |
 | `WEATHER_STATE_FILE` | `state/features/weather/state.json`, relative to the configured runtime; an explicit custom path overrides it. Stores settings, pending city queries and delivery controls only. |
@@ -208,7 +229,7 @@ Run one foreground consumer per account/runtime. Multiple consumers can steal me
 
 ## Privacy, testing and limits
 
-No real personal information, account configuration, conversation, customer material, token, database, runtime snapshot or original private Git history is included. Local-first means local storage and configuration control. Enabling WeChat sends traffic outside your computer; a configured model receives the current question (and bounded same-side context when fallback is enabled); optional map/media providers receive explicitly supplied inputs. Consult your providers' retention policies. Runtime files and tokens are sensitive and are not encrypted by this framework.
+No real personal information, account configuration, conversation, customer material, token, database, runtime snapshot or original private Git history is included. Local-first means local storage and configuration control. Enabling WeChat sends traffic outside your computer; a configured model receives the current question and bounded same-side context as described above; optional map/media providers receive explicitly supplied inputs. Consult your providers' retention policies. Runtime files and tokens are sensitive and are not encrypted by this framework.
 
 The WeChat transport checkpoints before feature execution or sending. A restart with an unresolved `executing` / `sending` operation stops for local inspection. A saved `ready` result resumes only unsent chunks with stable client IDs. Automatic uncertain-result reconciliation, exactly-once delivery, scheduler/broker wiring and live account acceptance are not provided. Server acceptance does not prove recipient delivery. See [recovery instructions](docs/architecture.md).
 

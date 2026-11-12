@@ -48,12 +48,12 @@ function createPairChallengeStore({ stateFile, now = () => Date.now(), random = 
     validateState(state);
     writeRecordState(stateFile, state, ['rounds']);
   }
-  function load() {
+  function load(readOnly = false) {
     const state = readRecordState(stateFile, { schemaVersion: 1, rounds: [], played: 0, matched: 0 }, true,
-      { strict: true, now, validate: validateState });
+      { strict: true, readOnly, now, validate: validateState });
     if (state.rounds[0] && now() - Date.parse(state.rounds[0].createdAt) >= ROUND_TTL_MS) {
       state.rounds = [];
-      save(state);
+      if (!readOnly) save(state);
     }
     return state;
   }
@@ -62,7 +62,7 @@ function createPairChallengeStore({ stateFile, now = () => Date.now(), random = 
   const statsText = state => `默契战绩：共玩 ${state.played} 轮、默契 ${state.matched} 次。`;
   function hasPending(side) {
     validSide(side);
-    return Boolean(load().rounds.length);
+    return Boolean(load(true).rounds.length);
   }
   function handle(side, command) {
     validSide(side);

@@ -269,3 +269,13 @@ The modules and tests use generic `owner` / `friend` role keys and fictional exa
 ## Optional quota fallback
 
 `public-fallback.js` connects typed quota detection and persistent probe recovery to both hosts. `deepseek-fallback.js` performs bounded admission, tool review and answer checks; `fallback-tools.js` adapts existing per-role feature stores; `fallback-journal.js` records execution/pending outcomes; `chat-history.js` provides bounded same-side context. `deepseek-client.js` owns the fixed provider endpoint. See [the architecture contract](architecture.md#quota-fallback) and README for opt-in configuration, runtime paths and unsupported actions.
+
+## Ordinary chat performance
+
+- `ordinary-batch.js`: 1-second silence / 3.5-second first-fragment cap; wired into the durable single-owner ingress queue.
+- `chat-stage-policy.js`: 40/60/120-second stage limits, shared 150-second primary/dispatch deadline and explicitly pure-stage retry eligibility.
+- `chat-lane-policy.js`: pure fail-closed lane classifier, strict fast-answer schema and local reply gate.
+- `chat-lane-state.js`: read-only enabled-host boolean probes; unknown/error forces L2.
+- `ordinary-chat-lanes.js`: L0 structured no-tool answer, L1 parallel draft/admission with two gates, original public text fallback and sanitized timing.
+
+`public-model.js` enforces HTTP schema/timeout/no-tool response handling, while `public-assistant.js`, `public-pair-console.js` and `public-wechat.js` supply only their existing state and routes. See [the complete contract](chat-performance.md) for runtime switch, history/privacy, recovery and verification limits.

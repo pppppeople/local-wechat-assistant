@@ -42,6 +42,7 @@ function createFeatureManual({ now = () => Date.now(), ttlMs = SESSION_MS } = {}
     session.expiresAt = now() + ttlMs;
     return footer(session.feature.triggerWord, `${index + 1} ${section.title}\n${parts[part]}${session.next ? '\n回「继续」看下半节' : ''}`);
   }
-  return { register, footer, select, exit: side => sessions.delete(side) };
+  return { register, footer, select, exit: side => sessions.delete(side),
+    hasPending: side => Boolean(sessions.get(side)?.expiresAt > now()) };
 }
 module.exports = { createFeatureManual, SESSION_MS };

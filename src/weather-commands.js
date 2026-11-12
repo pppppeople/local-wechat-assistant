@@ -146,6 +146,12 @@ function createWeatherCommands({ provider, store, morningTime = '08:00', now = (
     if (command?.type === 'query') return query(side, command.days);
     return result(true, HELP);
   }
-  return { handle, selectInput, exitManual: manual.exit, briefing: side => query(side, [0, 1], { morning: true }) };
+  return { handle, selectInput, exitManual: manual.exit,
+    hasPending(side) {
+      const pending = store.hasPending?.(side);
+      if (typeof pending !== 'boolean') return undefined;
+      return pending || manual.hasPending(side);
+    },
+    briefing: side => query(side, [0, 1], { morning: true }) };
 }
 module.exports = { HELP, UNAVAILABLE, parseWeatherCommand, shanghaiClock, dayDate, formatWeather, createWeatherCommands };

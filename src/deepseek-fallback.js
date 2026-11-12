@@ -113,6 +113,6 @@ function createDeepSeekFallback({ complete, tools, journal, loadPersona, getCont
       return footer([...actual, '降级处理暂时没有完成。' + message].join('\n\n'));
     } finally { clearTimeout(timer); }
   }
-  return { run, manual: (side, text) => manual.select(side, text), exitManual: side => manual.exit(side) };
+  return { run, manual: (side, text) => manual.select(side, text), exitManual: side => manual.exit(side), hasPending: manual.hasPending };
 }
 module.exports = { createDeepSeekFallback, CONSTRAINTS, hasExecutionClaim };

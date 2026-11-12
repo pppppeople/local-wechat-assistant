@@ -824,7 +824,21 @@ function createSharedPlaceBox({ stateFile, provider, now = () => Date.now(), onP
       && (!place.provenance?.ownerSide || place.provenance.ownerSide === 'owner'))
       .map(({ id, name }) => ({ id, name }));
   }
-  return { applyIntent, applyIntentResult, deleteSide, explain, inspect, handle, handleResult, hasPendingSuggestion, intentContext, status, readUnvisitedCount, readDrawPlaces, readOwnerUnvisitedItems };
+  function hasLanePending(side) {
+    validSide(side);
+    const state = readRecordState(stateFile, {}, true, { readOnly: true });
+    if (state.places !== undefined && !Array.isArray(state.places)) throw Error('Invalid place records');
+    return ['pending', 'suggestions', 'views'].some(key => {
+      if (state[key] === undefined) return false;
+      if (!state[key] || typeof state[key] !== 'object' || Array.isArray(state[key])) throw Error('Invalid place state');
+      const value = state[key][side];
+      if (!value) return false;
+      const at = Date.parse(value.createdAt);
+      if (!Number.isFinite(at)) throw Error('Invalid place pending time');
+      return now() - at < PENDING_TTL_MS;
+    });
+  }
+  return { applyIntent, applyIntentResult, deleteSide, explain, inspect, handle, handleResult, hasPendingSuggestion, hasLanePending, intentContext, status, readUnvisitedCount, readDrawPlaces, readOwnerUnvisitedItems };
 }
 
 module.exports = { createSharedPlaceBox, sharedPlaceHelp };

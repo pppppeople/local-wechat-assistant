@@ -45,6 +45,11 @@ function createWeatherStore({ stateFile, runtime, env = process.env, now = () =>
   return {
     stateFile: file,
     city: side => get(side).city,
+    hasPending(side) {
+      const entry = get(side);
+      expirePending(entry); // Read-only projection; no expiry write here.
+      return Boolean(entry.pending);
+    },
     pending(side) {
       const state = load(), entry = role(state, side);
       if (expirePending(entry)) save(state);

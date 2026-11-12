@@ -9,11 +9,12 @@ const { createPairConsole } = require('./public-pair-console');
 
 async function main(args = process.argv.slice(2)) {
   const config = loadPublicConfig();
-  const options = { runtime: config.runtime, model: createPublicModel(config.model), fallbackConfig: config.fallback };
+  const log = line => console.error(`[${new Date().toISOString()}] ${line}`);
+  const options = { runtime: config.runtime, model: createPublicModel(config.model), fallbackConfig: config.fallback, log };
   if (args.includes('--wechat')) {
     const assistant = createPublicAssistant(options);
-    const transport = createPublicWechat({ account: config.account, runtime: config.runtime, assistant });
-    try { for (;;) { await transport.pollOnce(); await sleep(1000); } }
+    const transport = createPublicWechat({ account: config.account, runtime: config.runtime, assistant, log });
+    try { for (;;) { await transport.pollOnce({ waitForIdle: false }); await sleep(1000); } }
     finally { assistant.close(); }
   }
   const assistant = createPairConsole(options);

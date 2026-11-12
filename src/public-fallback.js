@@ -46,13 +46,14 @@ function createPublicFallback({ runtime, model, config, personalTodos, expenseLe
   const timer = probeIntervalMs > 0 ? setInterval(probe, probeIntervalMs) : null;
   timer?.unref?.();
   return {
-    state, journal, request, probe,
+    state, journal, request, probe, history,
     close: () => clearInterval(timer),
     isExhausted: () => state.isExhausted(),
+    hasPending: side => handlers.get(side).hasPending(side),
     exitManual: side => handlers.get(side).exitManual(side),
     remember(req, reply) {
       appendChatTurn(historyFile, req.historyKey, { user: req.text, assistant: String(reply) },
-        { now: now(), sourceId: `turn:${req.id}` });
+        { now: now(), sourceId: `turn:${req.id}`, strict: true });
     },
     async intercept(req) {
       const handler = handlers.get(req.side);
@@ -62,8 +63,8 @@ function createPublicFallback({ runtime, model, config, personalTodos, expenseLe
       probe();
       return handler.run(req, history(req));
     },
-    async reply(req) {
-      try { return await model(req.text, { history: history(req) }); }
+    async reply(req, generate = model) {
+      try { return await generate(req.text, { history: history(req) }); }
       catch (error) {
         if (!state.exhaust(error)) throw error;
         return handlers.get(req.side).run(req, history(req));

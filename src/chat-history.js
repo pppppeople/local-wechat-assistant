@@ -6,11 +6,14 @@ const path = require('path');
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_TURNS = 24;
 
-function readThreads(file) {
+function readThreads(file, strict = false) {
   try {
     const value = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  } catch {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    if (strict) throw Error('Invalid history');
+    return {};
+  } catch (error) {
+    if (strict && error.code !== 'ENOENT') throw error;
     return {};
   }
 }
@@ -37,8 +40,10 @@ function getChatHistory(file, senderId, options = {}) {
   const now = options.now ?? Date.now();
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const maxTurns = options.maxTurns ?? DEFAULT_MAX_TURNS;
-  const thread = readThreads(file)[senderId];
+  const thread = readThreads(file, options.strict)[senderId];
   if (!thread) return [];
+  if (options.strict && (!Array.isArray(thread.turns) || normalizeTurns(thread.turns).length !== thread.turns.length
+    || !Number.isFinite(Date.parse(thread.updatedAt)))) throw Error('Invalid history thread');
 
   const updatedAt = new Date(thread.updatedAt || 0).getTime();
   if (!Number.isFinite(updatedAt) || now - updatedAt > ttlMs) return [];
@@ -50,8 +55,11 @@ function appendChatTurn(file, senderId, turn, options = {}) {
   const now = options.now ?? Date.now();
   const ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
   const maxTurns = options.maxTurns ?? DEFAULT_MAX_TURNS;
-  const threads = readThreads(file);
+  const threads = readThreads(file, options.strict);
   const existing = threads[senderId];
+  if (options.strict && existing && (!Array.isArray(existing.turns)
+    || normalizeTurns(existing.turns).length !== existing.turns.length
+    || !Number.isFinite(Date.parse(existing.updatedAt)))) throw Error('Invalid history thread');
   const updatedAt = new Date(existing?.updatedAt || 0).getTime();
   const currentTurns = Number.isFinite(updatedAt) && now - updatedAt <= ttlMs
     ? normalizeTurns(existing?.turns)

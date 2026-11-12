@@ -64,17 +64,17 @@ function validateState(state) {
 function createPairDailyQuestionStore({ stateFile, getBinding, now = () => Date.now(),
   sideNames = { owner: 'Owner', friend: '好友' } }) {
   const save = state => { validateState(state); writeRecordState(stateFile, state, ['days']); };
-  function load() {
+  function load(readOnly = false) {
     // Binding is derived from the broker configuration, never caller-supplied side/identity.
     const binding = getBinding();
     if (typeof binding !== 'string' || !binding) throw new Error('每日一问尚未绑定');
     const state = readRecordState(stateFile, { schemaVersion: 1, binding, days: [] }, true,
-      { strict: true, now, validate: validateState });
+      { strict: true, readOnly, now, validate: validateState });
     const date = shanghaiDay(now());
     if (state.binding !== binding || state.days.some(day => day.id !== date)) {
       state.binding = binding;
       state.days = [];
-      save(state);
+      if (!readOnly) save(state);
     }
     return { state, date };
   }
@@ -134,7 +134,8 @@ function createPairDailyQuestionStore({ stateFile, getBinding, now = () => Date.
     save(state);
     return { removed };
   }
-  return { handle, takePending, tick, deleteSide };
+  return { handle, takePending, tick, deleteSide,
+    hasPending: () => load(true).state.days.some(day => day.status !== 'revealed') };
 }
 
 module.exports = { QUESTIONS, questionForDate, createPairDailyQuestionStore };
