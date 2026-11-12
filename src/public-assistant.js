@@ -22,7 +22,7 @@ const { REQUEST_BUDGET_MS } = require('./chat-stage-policy');
 
 const HELP = '支持：记一下 明天买牛奶；我的待办；记账 12元 餐饮 示例午餐；今日账单；存临时信息 示例备忘；临时信息；创建习惯：散步；我的习惯。天气；天气说明；设置天气城市：城市名；开启天气早报 / 关闭天气早报；天气早报测试。天气双方均可用，早报推送需宿主接线。普通问答需要自备模型；可选额度兜底见「降级说明」。';
 function createPublicAssistant({ runtime, model = null, helpText = HELP, now = () => Date.now(), weatherProvider, weatherStore, weatherMorningTime, fallbackConfig, fallbackOptions = {}, placeBox,
-  laneProbes = () => [], env = process.env, log = () => {} }) {
+  laneProbes = () => [], env = process.env, log = () => {}, fastlaneOptions = {} }) {
   const stateFile = feature => path.join(runtime, 'state', 'features', feature, 'state.json');
   const routes = [
     [parsePersonalTodoCommand, createPersonalTodoStore({ stateFile: stateFile('todo') })],
@@ -36,7 +36,7 @@ function createPublicAssistant({ runtime, model = null, helpText = HELP, now = (
   const contextLeases = createContextLeaseStore({ runtime, now });
   const fallback = createPublicFallback({ runtime, model, config: fallbackConfig, now, ...fallbackOptions,
     personalTodos: routes[0][1], expenseLedger: routes[1][1], weatherCommands: weather, placeBox });
-  const ordinaryChat = model && createOrdinaryChat({ model, now, env, log });
+  const ordinaryChat = model && createOrdinaryChat({ model, now, env, log, fastlaneOptions });
   const historyFile = path.join(runtime, 'state', 'chat', 'threads.json');
   const request = (text, side, metadata = {}) => fallback?.request(text, side, metadata) || {
     text, side, id: metadata.id || crypto.randomUUID(),
@@ -79,7 +79,7 @@ function createPublicAssistant({ runtime, model = null, helpText = HELP, now = (
         if (result !== null) {
           if (exhausted) {
             const record = { ...laneTiming({ lane: null, reasonCodes: ['deepseek_bypass'] }), requestId: metadata.traceId,
-              totalMs: now() - metadata.receivedAt };
+              provider: 'deepseek', totalMs: now() - metadata.receivedAt };
             metadata.onTiming?.(record); log(`chat timing ${JSON.stringify(record)}`);
           }
           weather.exitManual(side); return result;

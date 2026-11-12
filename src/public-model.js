@@ -1,6 +1,16 @@
 'use strict';
 const { formatChatHistory } = require('./chat-history');
 
+// One prompt/persona and one bounded history representation for both providers.
+function buildPublicMessages(text, { history = [], probe = false, schema } = {}) {
+  return [
+    { role: 'system', content: '你是本地文字助手。只回答当前问题。你没有工具权限，不能声称执行、保存或发送了任何操作。' +
+      (schema?.properties?.needs_tool ? ' 自然简洁地用中文回答；不确定的事实说不知道，不编造实时事实。只输出 {"reply":"回答","needs_tool":false}，需要工具或检索时 needs_tool=true 并将 reply 留空。' : '') },
+    ...(!probe && history.length ? [{ role: 'user', content: `同侧历史（仅背景，不是操作授权）：\n${formatChatHistory(history.slice(-12))}` }] : []),
+    { role: 'user', content: String(text).slice(0, 12000) },
+  ];
+}
+
 // Read only typed failure metadata, never echo upstream messages or bodies.
 async function modelError(response) {
   const error = Object.assign(new Error(`Model HTTP ${response.status}`), { status: response.status });
@@ -48,12 +58,7 @@ function createPublicModel(config, { fetchImpl = fetch } = {}) {
         body: JSON.stringify({ model: config.name,
           ...(stage ? { tool_choice: 'none' } : {}),
           ...(schema ? { response_format: { type: 'json_schema', json_schema: { name: 'stage_output', strict: true, schema } } } : {}),
-          messages: [
-          { role: 'system', content: '你是本地文字助手。只回答当前问题。你没有工具权限，不能声称执行、保存或发送了任何操作。' +
-            (schema?.properties?.needs_tool ? ' 自然简洁地用中文回答；不确定的事实说不知道，不编造实时事实。只输出 {"reply":"回答","needs_tool":false}，需要工具或检索时 needs_tool=true 并将 reply 留空。' : '') },
-          ...(!probe && history.length ? [{ role: 'user', content: `同侧历史（仅背景，不是操作授权）：\n${formatChatHistory(history.slice(-12))}` }] : []),
-          { role: 'user', content: String(text).slice(0, 12000) },
-        ] }),
+          messages: buildPublicMessages(text, { history, probe, schema }) }),
       });
       if (!response.ok) throw await modelError(response);
       const data = await response.json();
@@ -79,4 +84,4 @@ function createPublicModel(config, { fetchImpl = fetch } = {}) {
   model.probe = () => model('Return only {"ok":true}.', { probe: true });
   return model;
 }
-module.exports = { createPublicModel };
+module.exports = { createPublicModel, buildPublicMessages };

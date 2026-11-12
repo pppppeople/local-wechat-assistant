@@ -25,7 +25,7 @@ const HELP = [
 
 // Local role selection is simulation, never authentication for a network caller.
 // Pair data is kept by the existing stores; only transient display notices live here.
-function createPairConsole({ runtime, model = null, now = () => Date.now(), random = Math.random, weatherProvider, weatherStore, weatherMorningTime, fallbackConfig, fallbackOptions, env, log }) {
+function createPairConsole({ runtime, model = null, now = () => Date.now(), random = Math.random, weatherProvider, weatherStore, weatherMorningTime, fallbackConfig, fallbackOptions, env, log, fastlaneOptions }) {
   let side = 'owner';
   const notices = { owner: [], friend: [] };
   const notify = (recipient, text) => notices[recipient].push(text);
@@ -44,7 +44,7 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
     [parsePairChallengeCommand, createPairChallengeStore({ ...options('pair-challenge'), random, onNotice: notify })],
     [parsePairSavingsCommand, createPairSavingsStore({ ...options('pair-savings'), getBinding })],
   ];
-  const personal = createPublicAssistant({ runtime, model, now, weatherProvider, weatherStore, weatherMorningTime, fallbackConfig, fallbackOptions, placeBox, helpText: HELP, env, log,
+  const personal = createPublicAssistant({ runtime, model, now, weatherProvider, weatherStore, weatherMorningTime, fallbackConfig, fallbackOptions, placeBox, helpText: HELP, env, log, fastlaneOptions,
     laneProbes: role => [['daily_question', () => daily.hasPending()],
       ['challenge', () => routes[2][1].hasPending(role)],
       ['place_choice', () => placeBox.hasLanePending(role)]] });

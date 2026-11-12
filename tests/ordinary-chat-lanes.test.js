@@ -70,7 +70,7 @@ test('failed eligibility, needs_tool, schema errors and unsupported completion c
     assert.equal(await run('什么是光合作用？', { state: known }), '最终基线回答');
     assert.equal(calls.length, 4); assert.equal(calls.at(-1).schema, undefined);
     const timing = JSON.parse(logs.at(-1).slice('chat timing '.length));
-    assert.equal(timing.effective_lane, 'L2'); assert.equal(timing.fastlane_fallback, reason);
+    assert.equal(timing.effective_lane, 'L2'); assert.equal(timing.fastlane_fallback, reason === 'check_fail' ? reason : `primary_${reason}`);
     assert.equal(timing.l1_gate_reject, approved ? 'local_gate_fail' : 'check_fail');
   }
 });
