@@ -74,7 +74,7 @@ test('failed eligibility, needs_tool, schema errors and unsupported completion c
     assert.equal(timing.l1_gate_reject, approved ? 'local_gate_fail' : 'check_fail');
   }
 });
-test('fallback and retries share the original remaining deadline, with no speculation retry', async () => {
+test('fallback and retries share the original remaining deadline, with no speculation retry for malformed output', async () => {
   let clock = 140000;
   const calls = [];
   const run = createOrdinaryChat({ now: () => clock, model: async (_text, options) => {
@@ -84,7 +84,7 @@ test('fallback and retries share the original remaining deadline, with no specul
   } });
   await assert.rejects(run('你好', { state: known, receivedAt: 0 }), /deadline/);
   assert.deepEqual(calls.map(c => c.timeoutMs), [10000, 4000]);
-  assert.equal(calls[0].maxAttempts, 1);
+  assert.equal(calls[0].maxAttempts, 2);
   assert.ok(calls.every(c => c.deadlineAt === 150000));
 });
 test('unknown or failed probes close admission without exposing state bodies', () => {
@@ -174,4 +174,68 @@ test('enabled L2 matches the frozen public baseline for text, actual feature wri
     if (scenario === 'todo') assert.equal(await hosts[0].reply('我的待办'), await hosts[1].reply('我的待办'));
     assert.deepEqual(events[0], events[1]); hosts.forEach(host => host.close());
   }
+});
+
+for (const text of ['你好', '什么是光合作用？']) test(`watchdog-only draft retry keeps fast admission and bounded timing: ${text}`, async () => {
+  const calls = [], logs = [];
+  let clock = 1000, drafts = 0;
+  const run = createOrdinaryChat({ now: () => clock, log: line => logs.push(line), model: async (_text, options) => {
+    calls.push(options);
+    if (!options.schema?.properties.needs_tool) return admit;
+    if (++drafts === 1) {
+      clock += 20000;
+      throw Object.assign(Error('synthetic timeout with private detail'), { errorKind: 'TRANSIENT', timeoutReason: 'first_output_watchdog' });
+    }
+    options.onTiming({ firstOutputMs: 120, prompt: 'must not be logged', timeoutReason: 'untrusted detail' });
+    return answer;
+  } });
+  let final;
+  assert.equal(await run(text, { state: known, receivedAt: 1000, onTiming: record => { final = record; } }), '合成文字回答');
+  const draftCalls = calls.filter(c => c.schema?.properties.needs_tool);
+  assert.deepEqual(draftCalls.map(c => [c.attempt, c.maxAttempts, c.firstOutputTimeoutMs]), [[1, 2, 20000], [2, 2, 20000]]);
+  assert.equal(draftCalls[1].retryReason, 'TRANSIENT');
+  assert.ok(calls.every(c => c.deadlineAt === 151000));
+  assert.equal(final.fastlane_fallback, false); assert.equal(final.modelAttempts, text === '你好' ? 2 : 4);
+  const rows = logs.filter(line => line.startsWith('model timing ')).map(line => JSON.parse(line.slice(13)));
+  const timeout = rows.find(r => r.firstOutputWatchdog);
+  assert.equal(timeout.timeoutReason, 'first_output_watchdog'); assert.equal(timeout.firstOutputMs, null);
+  const success = rows.find(r => r.firstOutputMs === 120);
+  assert.equal(success.timeoutReason, null); assert.equal(success.firstOutputWatchdog, false);
+  assert.ok(logs.every(line => !line.includes('private detail') && !line.includes('must not be logged') && !line.includes('untrusted detail')));
+});
+
+test('ordinary stage timeout, network failure and parse failure do not retry fast drafts', async () => {
+  for (const failure of [Object.assign(Error('synthetic timeout'), { timeoutReason: 'stage_budget' }), Error('synthetic network failure'), null]) {
+    const calls = [];
+    const run = createOrdinaryChat({ model: async (_text, options) => {
+      calls.push(options);
+      if (options.schema?.properties.needs_tool) { if (failure) throw failure; return 'not JSON'; }
+      return '最终基线回答';
+    } });
+    assert.equal(await run('你好', { state: known }), '最终基线回答');
+    assert.deepEqual(calls.map(c => Boolean(c.schema)), [true, false]);
+  }
+});
+
+test('a second watchdog timeout falls back without a third draft attempt', async () => {
+  const calls = [];
+  const run = createOrdinaryChat({ model: async (_text, options) => {
+    calls.push(options);
+    if (options.schema) throw Object.assign(Error('synthetic timeout'), { timeoutReason: 'first_output_watchdog' });
+    return '基线文字';
+  } });
+  assert.equal(await run('你好', { state: known }), '基线文字');
+  assert.deepEqual(calls.map(c => [Boolean(c.schema), c.attempt]), [[true, 1], [true, 2], [false, 1]]);
+});
+
+for (const stop of ['cancel', 'deadline']) test(`watchdog draft cannot retry after ${stop}`, async () => {
+  let current = true, clock = 1000, calls = 0;
+  const run = createOrdinaryChat({ now: () => clock, model: async () => {
+    calls++;
+    if (stop === 'cancel') current = false;
+    else clock = 151000;
+    throw Object.assign(Error('synthetic timeout'), { timeoutReason: 'first_output_watchdog' });
+  } });
+  await assert.rejects(run('你好', { state: known, receivedAt: 1000, isCurrent: () => current }));
+  assert.equal(calls, 1);
 });

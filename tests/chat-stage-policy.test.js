@@ -11,6 +11,7 @@ test('stage budgets and attempt metadata are applied to the existing runner', as
     await run('synthetic', '', [], { stage });
   }
   assert.deepEqual(calls.map(call => call[3].timeoutMs), [40000, 40000, 40000, 60000, 120000, 120000]);
+  assert.deepEqual(calls.map(call => call[3].firstOutputTimeoutMs), [20000, 20000, undefined, 20000, undefined, undefined]);
   assert.ok(calls.every(call => call[3].attempt === 1 && call[3].maxAttempts === 1));
 });
 
@@ -48,7 +49,7 @@ test('parallel admission cannot retry once any feature dispatch has started', as
 
 test('auth, quota and unexpected tool failures never retry, even in a pure stage', async () => {
   for (const failure of [{ ...failed, errorKind: 'AUTH' }, { ...failed, errorKind: 'QUOTA_EXHAUSTED' },
-    { ...failed, authFailed: true }, { ...failed, failureReason: 'unexpected_tool' }]) {
+    { ...failed, errorKind: 'BUDGET' }, { ...failed, authFailed: true }, { ...failed, failureReason: 'unexpected_tool' }]) {
     let calls = 0;
     const run = createChatStageRunner({ run: async () => { calls++; return failure; } });
     await run('synthetic', '', [], { retrySafe: true }); assert.equal(calls, 1);
@@ -64,4 +65,21 @@ test('the absolute request deadline includes earlier waiting and cannot renew on
   assert.equal(result.errorKind, 'BUDGET'); assert.equal(result.attempts, 1); assert.equal(calls, 1);
   const next = await run('synthetic', '', [], { retrySafe: true, budget: { deadlineAt: 150000 } });
   assert.equal(next.attempts, 0); assert.equal(calls, 1);
+});
+
+
+test('draft exception retries only watchdog timeout and retains terminal failure exclusions', async () => {
+  for (const failure of [
+    { ...failed, timeoutReason: 'first_output_watchdog' },
+    { ...failed, timeoutReason: 'stage_budget' }, failed,
+    { ...failed, errorKind: 'UNKNOWN' },
+    ...['AUTH', 'QUOTA_EXHAUSTED', 'BUDGET'].map(errorKind => ({ ...failed, errorKind, timeoutReason: 'first_output_watchdog' })),
+    { ...failed, failureReason: 'unexpected_tool', timeoutReason: 'first_output_watchdog' },
+  ]) {
+    let calls = 0;
+    const run = createChatStageRunner({ run: async () => { calls++; return failure; } });
+    const result = await run('synthetic draft', '', [], { retrySafe: true, retryOnWatchdogOnly: true });
+    const eligible = failure.timeoutReason === 'first_output_watchdog' && failure.errorKind === 'TRANSIENT' && failure.failureReason === 'timeout';
+    assert.equal(calls, eligible ? 2 : 1); assert.equal(result.attempts, calls);
+  }
 });

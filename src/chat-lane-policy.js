@@ -10,6 +10,15 @@ const L0 = /^(?:你好|嗨|哈喽|早|早安|午安|晚安|晚上好|早上好|�
 // Stable, self-contained text questions only. Anything else is uncertain (L2).
 const L1 = /^(?:为什么(?:天空(?:看起来)?是蓝色的|树叶(?:会)?变黄|猫(?:爱|喜欢)睡觉|海水是咸的|冰会浮在水面|月亮有圆缺|会出现彩虹)|什么是(?:光合作用|比喻|散文|小说|惯性|质数|修辞|共情|押韵|反讽)|(?:画龙点睛|守株待兔|共情|反讽)是什么意思|(?:散文和小说|比喻和拟人|同情和共情)有什么区别|你觉得(?:独处有什么乐趣|阅读有意思吗|散步能让人放松吗|音乐能表达情绪吗|友谊需要经常联系吗)|你喜欢(?:安静的音乐|音乐|阅读|猫|狗|什么颜色)[吗呢？?]*|(?:如何|怎样|怎么)(?:把道歉说得自然|缓解紧张|理解比喻|表达感谢)|我(?:感觉|觉得|有时候(?:觉得)?|总是(?:觉得)?)(?:独处|阅读|散步|休息|工作|学习|和朋友相处)?(?:很|有点|特别)?(?:舒服|疲惫|紧张|焦虑|开心|难过|孤独|委屈|烦躁|平静|有趣|放松))[？?。！!]*$/u;
 
+// Generic short language shapes; all existing exclusions and whitelists run first.
+const SHORT_SHAPES = [
+  ['L0', 'short_acknowledgement', /^(?:(?:好|行)吧|嗯+|哦+|噢+|喔+|好+|明白|明白了|知道了|知道啦|了解|收到|没事|没关系|不用谢)[啊呀哦噢喔呢啦哒哈诶耶～~！!。,.，\s]*$/u],
+  ['L0', 'short_confirmation', /^(?:行|可以|对|是的|是呀|没错)[啊呀哦噢喔呢啦哒哈诶耶～~！!。,.，\s]*$/u],
+  ['L0', 'repeated_laughter', /^(?:哈{2,}|嘿{2,}|嘻{2,}|呵{2,})[啊呀哦啦～~！!。\s]*$/u],
+  ['L0', 'short_personal_state', /^(?:我)?(?:好|很|有点|有些|太|真的|真|特别|超级)?(?:累|困|饿|冷|热|开心|难过|烦|无聊|紧张|焦虑|委屈|孤独|疲惫|放松|舒服|高兴|快乐|幸福|难受|不开心)(?:了|啊|呀|呢|啦|哦|死了|极了|得很|得慌)*[！!。～~\s]*$/u],
+  ['L1', 'identity_question', /^(?:你(?:是谁|叫什么(?:名字)?)|(?:该)?怎么称呼你|你的(?:名字|称呼)是什么)[啊呀呢？?！!。～~\s]*$/u],
+];
+
 function classifyChatLane({ text, state, imagePaths = [], hasAttachment = false, fragments = 1 } = {}) {
   const result = (lane, ...reasonCodes) => ({ lane, reasonCodes });
   if (!state || state.known !== true) return result('L2', 'state_unknown');
@@ -30,6 +39,9 @@ function classifyChatLane({ text, state, imagePaths = [], hasAttachment = false,
   if (TEMPORAL.test(value)) return result('L2', 'numeric_or_temporal');
   if (value.length <= 16 && L0.test(value)) return result('L0', 'smalltalk_whitelist');
   if (L1.test(value)) return result('L1', 'self_contained_text');
+  if (value.length <= 16) {
+    for (const [lane, reason, shape] of SHORT_SHAPES) if (shape.test(value)) return result(lane, reason);
+  }
   return result('L2', 'uncertain_text');
 }
 

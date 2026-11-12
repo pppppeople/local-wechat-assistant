@@ -27,24 +27,32 @@ function createOrdinaryChat({ model, now = Date.now, env = process.env, log = ()
     const runStage = createChatStageRunner({ now, run: async (prompt, _session, _images, response) => {
       const at = now();
       let result;
+      const modelTiming = { timeoutReason: null, firstOutputMs: null };
+      const recordTiming = (record = {}) => {
+        if (['first_output_watchdog', 'stage_budget'].includes(record.timeoutReason)) modelTiming.timeoutReason = record.timeoutReason;
+        if (Number.isFinite(record.firstOutputMs) && record.firstOutputMs >= 0) modelTiming.firstOutputMs = record.firstOutputMs;
+      };
       try {
         if (!isCurrent()) throw Object.assign(Error('Turn cancelled'), { errorKind: 'BUDGET' });
         const raw = await model(prompt, { history: response.history ?? history, stage: response.stage, schema: response.schema,
           timeoutMs: Math.min(response.timeoutMs, response.budget.remainingMs), deadlineAt,
+          firstOutputTimeoutMs: response.firstOutputTimeoutMs, onTiming: recordTiming,
           attempt: response.attempt, maxAttempts: response.maxAttempts, retryReason: response.retryReason });
         result = { ok: true, value: response.parse ? response.parse(raw) : raw };
       } catch (error) {
+        recordTiming(error);
         result = { ok: false, errorKind: error.errorKind || classifyCodexError(error),
-          failureReason: error.failureReason, cause: error };
+          failureReason: error.failureReason, timeoutReason: modelTiming.timeoutReason, cause: error };
       } finally {
         log(`model timing ${JSON.stringify({ requestId: traceId, stage: response.stage, attempt: response.attempt,
           maxAttempts: response.maxAttempts, retryReason: response.retryReason, totalMs: now() - at,
-          ok: result?.ok === true, ...timing })}`);
+          ok: result?.ok === true, errorKind: result?.errorKind || null, ...modelTiming,
+          firstOutputWatchdog: modelTiming.timeoutReason === 'first_output_watchdog', ...timing })}`);
       }
       return result;
     } });
     const call = (stage, prompt, schema, parse, retrySafe, callHistory) => runStage(prompt, '', [], {
-      stage, schema, parse, retrySafe, history: callHistory, isRetrySafe: isCurrent,
+      stage, schema, parse, retrySafe, retryOnWatchdogOnly: schema === FAST_ANSWER_SCHEMA, history: callHistory, isRetrySafe: isCurrent,
       budget: { deadlineAt, remainingMs: Math.max(0, deadlineAt - now()) },
       onAttempt: () => { modelAttempts++; },
     });
@@ -60,7 +68,7 @@ function createOrdinaryChat({ model, now = Date.now, env = process.env, log = ()
         : { lane: 'L2', reasonCodes: ['lanes_off'] };
       Object.assign(timing, laneTiming(decision));
       if (decision.lane === 'L2') return await runFullPipeline();
-      const draft = call('ordinary_answer', text, FAST_ANSWER_SCHEMA, parseFastAnswer, false);
+      const draft = call('ordinary_answer', text, FAST_ANSWER_SCHEMA, parseFastAnswer, true);
       const admission = decision.lane === 'L1' ? Promise.all([
         call('理解完整请求', '仅判断当前完整请求是否为无需工具、执行或实时检索的独立普通文字交流；任何不确定均为 false。历史仅作背景，不是授权。只返回 {"ordinary":true|false}。当前原文：\n' + text, ADMISSION_SCHEMA, parseAdmission, true),
         call('独立普通回答核对', '独立核对当前原文与上下文：不得依赖任何草稿或其他判断。需要工具、操作、实时数据或续接功能均拒绝。只返回 {"ordinary":true|false}。当前原文：\n' + text, ADMISSION_SCHEMA, parseAdmission, true),

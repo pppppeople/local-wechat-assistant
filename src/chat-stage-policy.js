@@ -10,6 +10,9 @@ const STAGE_TIMEOUTS = Object.freeze({
 });
 const PURE_STAGES = new Set(['理解完整请求', '独立普通回答核对', '独立语义核对', 'ordinary_answer']);
 
+const FIRST_OUTPUT_TIMEOUT_MS = 20000;
+const WATCHDOG_STAGES = new Set(['理解完整请求', '独立普通回答核对', 'ordinary_answer']);
+
 // Host policy only. The raw no-tool runner and the transport never replay turns.
 // A caller must explicitly attest that no feature/tool has run in this request.
 function createChatStageRunner({ run, now = Date.now }) {
@@ -30,11 +33,13 @@ function createChatStageRunner({ run, now = Date.now }) {
       response.onAttempt?.();
       const result = await run(input, attempt === 1 ? sessionId : '', images, {
         ...response, stage, timeoutMs: STAGE_TIMEOUTS[stage] || 120000,
+        firstOutputTimeoutMs: WATCHDOG_STAGES.has(stage) ? FIRST_OUTPUT_TIMEOUT_MS : undefined,
         budget: { ...response.budget, deadlineAt, remainingMs },
         attempt, maxAttempts, retryReason: previousFailure,
       });
       lastResult = result;
       if (result.ok || result.authFailed || ['AUTH', 'QUOTA_EXHAUSTED', 'BUDGET'].includes(result.errorKind)
+        || response.retryOnWatchdogOnly && result.timeoutReason !== 'first_output_watchdog'
         || result.failureReason === 'unexpected_tool' || attempt === maxAttempts) return { ...result, attempts: attempt };
       previousFailure = result.failureReason || result.errorKind || 'model_error';
     }
