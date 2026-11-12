@@ -59,7 +59,7 @@ function createPublicWechat({ account, runtime, assistant, fetchImpl = fetch }) 
       const text = (message.item_list || []).find(item => item.type === 1)?.text_item?.text;
       if (!messageId || typeof text !== 'string' || !text.trim() || !message.context_token || state.processed.includes(messageId)) continue;
       state.pending = { messageId, deliveryId: crypto.randomUUID(), context: message.context_token, status: 'executing' }; save();
-      const reply = await assistant.reply(text);
+      const reply = await assistant.reply(text, 'owner', { id: messageId, accountId: account.accountId, senderId: account.userId });
       state.pending = { ...state.pending, status: 'ready', chunks: splitMessage(String(reply), 1700), next: 0 }; save();
       await deliverPending();
     }

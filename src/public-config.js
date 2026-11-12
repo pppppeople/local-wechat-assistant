@@ -11,6 +11,7 @@ function loadPublicConfig(env = process.env, { home = os.homedir(), cwd = proces
     runtime,
     account: { accountId: env.WECHAT_ACCOUNT_ID || '', userId: env.WECHAT_OWNER_ID || '', token: env.WECHAT_TOKEN || '', baseUrl: env.WECHAT_BASE_URL || '' },
     model: { endpoint: env.MODEL_ENDPOINT || '', name: env.MODEL_NAME || '', apiKey: env.MODEL_API_KEY || '', timeoutMs },
+    fallback: { apiKey: env.DEEPSEEK_API_KEY || '', model: env.DEEPSEEK_MODEL || 'deepseek-flash' },
   };
 }
 function validateWechatAccount(account) {

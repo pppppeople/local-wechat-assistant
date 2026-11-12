@@ -265,3 +265,7 @@ The modules and tests use generic `owner` / `friend` role keys and fictional exa
 - [public-model.js](../src/public-model.js)
 - [public-wechat.js](../src/public-wechat.js)
 
+
+## Optional quota fallback
+
+`public-fallback.js` connects typed quota detection and persistent probe recovery to both hosts. `deepseek-fallback.js` performs bounded admission, tool review and answer checks; `fallback-tools.js` adapts existing per-role feature stores; `fallback-journal.js` records execution/pending outcomes; `chat-history.js` provides bounded same-side context. `deepseek-client.js` owns the fixed provider endpoint. See [the architecture contract](architecture.md#quota-fallback) and README for opt-in configuration, runtime paths and unsupported actions.

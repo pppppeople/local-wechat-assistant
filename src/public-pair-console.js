@@ -25,7 +25,7 @@ const HELP = [
 
 // Local role selection is simulation, never authentication for a network caller.
 // Pair data is kept by the existing stores; only transient display notices live here.
-function createPairConsole({ runtime, model = null, now = () => Date.now(), random = Math.random, weatherProvider, weatherStore, weatherMorningTime }) {
+function createPairConsole({ runtime, model = null, now = () => Date.now(), random = Math.random, weatherProvider, weatherStore, weatherMorningTime, fallbackConfig, fallbackOptions }) {
   let side = 'owner';
   const notices = { owner: [], friend: [] };
   const notify = (recipient, text) => notices[recipient].push(text);
@@ -33,17 +33,18 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
   const options = feature => ({ stateFile: stateFile(feature), now, sideNames: SIDE_NAMES });
   const getBinding = () => 'local-console-pair';
   const daily = createPairDailyQuestionStore({ ...options('pair-daily-question'), getBinding });
-  const routes = [
-    [text => parseSharedPlaceCommand(text, { now: now() }), createSharedPlaceBox({
+  const placeBox = createSharedPlaceBox({
       ...options('shared-place'), provider: { available: false },
       onPlaceAdded: ({ side: author, place }) => notify(author === 'owner' ? 'friend' : 'owner',
         `${SIDE_NAMES[author]}添加了「${place.name}」，可用「查看想去箱」查看共同清单。`),
-    })],
+    });
+  const routes = [
+    [text => parseSharedPlaceCommand(text, { now: now() }), placeBox],
     [parsePairDailyQuestionCommand, daily],
     [parsePairChallengeCommand, createPairChallengeStore({ ...options('pair-challenge'), random, onNotice: notify })],
     [parsePairSavingsCommand, createPairSavingsStore({ ...options('pair-savings'), getBinding })],
   ];
-  const personal = createPublicAssistant({ runtime, model, now, weatherProvider, weatherStore, weatherMorningTime, helpText: HELP });
+  const personal = createPublicAssistant({ runtime, model, now, weatherProvider, weatherStore, weatherMorningTime, fallbackConfig, fallbackOptions, placeBox, helpText: HELP });
   function drainNotices() {
     const pending = notices[side].splice(0);
     const question = daily.takePending(side);
@@ -52,6 +53,8 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
   }
   return {
     weather: personal.weather,
+    fallback: personal.fallback,
+    close: () => personal.close(),
     contextLeases: personal.contextLeases,
     get speaker() { return SIDE_NAMES[side]; },
     get side() { return side; },
@@ -70,10 +73,17 @@ function createPairConsole({ runtime, model = null, now = () => Date.now(), rand
       const pending = drainNotices();
       let reply;
       if (!value || /^(?:帮助|help)$/iu.test(value)) { personal.exitManual(side); reply = HELP; }
-      else {
+      else if (personal.fallback?.isExhausted() || /^(?:降级说明|降级帮助)$/u.test(value)) {
+        reply = await personal.reply(value, side, { refreshReply });
+      } else {
         for (const [parse, store] of routes) {
           const command = parse(value);
-          if (command) { personal.exitManual(side); reply = await store.handle(side, command); break; }
+          if (command) {
+            personal.exitManual(side);
+            reply = await store.handle(side, command);
+            if (personal.fallback) personal.fallback.remember(personal.fallback.request(value, side), reply);
+            break;
+          }
         }
         if (reply === undefined) reply = await personal.reply(value, side, { refreshReply });
       }

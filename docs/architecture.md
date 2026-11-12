@@ -1,6 +1,6 @@
 # Architecture and integration contract
 
-`main.js` selects the playable pair console or the single-owner WeChat transport. `public-pair-console.js` handles local speaker selection and routes four pair features to their existing parsers/stores. `public-assistant.js` retains the todo, expense, temporary-note and habit routes with their original owner-only permissions. Only unmatched text can reach the optional model adapter. The model receives no tool catalog, feature results, identity configuration, saved records or previous conversation.
+`main.js` selects the playable pair console or the single-owner WeChat transport. `public-pair-console.js` handles local speaker selection and routes four pair features to their existing parsers/stores. `public-assistant.js` retains the todo, expense, temporary-note and habit routes with their original owner-only permissions. Without quota fallback, only unmatched text reaches the optional model adapter, which receives the current question and no tool catalog or history. Enabling fallback adds the bounded context and tool flow described below; authenticated role selection remains outside model control.
 
 ## Local two-role experience
 
@@ -63,3 +63,28 @@ Changing account identity, owner identity or base URL requires a new runtime; ex
 The default host does not use the old orchestration loop. Independent modules take explicit file paths, clocks, provider/model callbacks and optional notification callbacks. These callbacks grant authority: never derive a side or recipient directly from message text, and never let model output bypass host checks. Bind journals/outboxes to both the original account and sender. Enforce expiry, cancellation, consent and visibility in your host before connecting friend features or notifications. Generic side labels do not authenticate a caller.
 
 Task-intent parsing and journal utilities remain reusable library APIs; no shell/Codex executor is connected. Media utilities operate on caller-supplied buffers/files and provider callbacks; the foreground host is text-only. The map library calls external public services when explicitly invoked; some providers need your own key and attribution. These are opt-in integrations, independently subject to provider availability and terms.
+
+## Quota fallback
+
+`public-fallback.js` wires `codex-errors`, `codex-quota-state`, `deepseek-client`, `deepseek-fallback`, `fallback-tools`, `fallback-journal` and `chat-history` into both public hosts. The Codex-named classifier/state modules preserve typed protocol compatibility; the public CLI does not launch Codex or load private context. The primary HTTPS adapter accepts this failure envelope on a non-2xx response:
+
+```json
+{
+  "error": { "codexErrorInfo": "usageLimitExceeded" },
+  "rateLimits": {
+    "primary": { "usedPercent": 100, "resetsAt": 1800000300 }
+  }
+}
+```
+
+`error.code: "insufficient_quota"` is also accepted. HTTP 401/403 remain authentication errors. Bare 429 and upstream free-text messages never count as exhaustion. The adapter copies only known error variants and numeric rate-limit fields, never raw messages/headers/bodies. A gateway hiding structured quota evidence cannot trigger fallback automatically. Reset timestamps are Unix seconds; the latest future reset among exhausted primary/secondary windows wins, with a five-hour fallback if none is valid.
+
+The persisted breaker uses a generation counter so an older successful probe cannot clear a newer exhaustion. A process-local 30-second timer checks the persisted due time; first probe after 15 minutes, then 30/60-minute backoff, shortened by a future reset. Each HTTP probe is a fresh 15-second request for `{"ok":true}`, without persona, history or tools. A fallback request in flight keeps its provider even if a probe succeeds. Host `close()` releases the timer. Custom model callbacks should implement `model.probe()` with the same timeout and fresh-context contract.
+
+`DEEPSEEK_API_KEY` enables the adapter; absent credentials preserve the old model/command behavior and create no fallback history. The client uses `https://api.deepseek.com/chat/completions`, non-streaming requests, optional JSON/function-call output, and bounded calls. It refuses redirects and incomplete responses, and sanitizes transport errors. No credentials are bundled. Node's explicit `--env-file` loading or service-manager environment injection replaces machine-specific shell sourcing.
+
+Admission and authorization review are independent requests. Only the admitted ordinary-chat branch receives a generic example style. The tool branch gets a side-specific catalog: weather for either side, personal todo/expense tools for owner, and places only when the console injects its existing place store. No model parameter can supply a side, recipient, account or path. Todo completion rechecks the stable item ID before changing the current numbered item. Existing place callbacks still produce only local notices.
+
+While exhausted, ingress bypasses direct mutating parsers. Unadapted, ambiguous, multi-step, delete/cancel and unsupported requests go to `queues/model-fallback/pending.jsonl`; they never replay automatically on recovery. Tool journals live in `state/model-fallback/operations/`, separate from `state/model-fallback/codex-quota.json`. An account/sender/turn key binds each operation; saved completed results are reused, unresolved started operations are held. This is not an atomic transaction with feature stores and does not promise exactly-once execution. New turn IDs are new requests, not semantic deduplication. Transport checkpoints still hold uncertain execution or sending across restarts.
+
+When enabled, visible host replies and labelled tool receipts join `state/chat/threads.json`, keyed by account/sender/role. Console role selection stays local; WeChat supplies the authenticated account, sender and message ID to the assistant. Both providers read only the requesting side's last 12 entries. Storage retains 24 entries per thread and expires inactive threads after 30 days; retained transcripts, pending text and operation payloads are private runtime data, not repository assets. No prior installation is discovered, imported or migrated. Pair notices and sealed answers still follow existing visibility rules; no other side's raw conversation is loaded.
