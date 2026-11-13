@@ -17,7 +17,9 @@ function chatLanesEnabled(env = process.env) { return !/^(?:off|false|0)$/iu.tes
 function laneTiming(decision = { lane: null, reasonCodes: ['not_classified'] }) {
   return { lane: decision.lane, effective_lane: decision.lane, lane_reason_codes: decision.reasonCodes,
     provider: 'primary', fastlane_fallback: false, l1_gate_reject: null, l1_gate_detail: null,
-    draftProvider: null, draftMs: null, draftOutcome: 'disabled' };
+    draftProvider: null, draftMs: null, draftOutcome: 'disabled',
+    draftProviderErrorCategory: null, draftProviderHttpStatus: null,
+    draftCheckApproved: null, draftCheckNeedsUser: null, draftCheckIssuesCount: null, draftCheckRejectReason: null };
 }
 
 // Stateless HTTP requests are fresh turns. There is no tool/executor API here.

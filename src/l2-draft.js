@@ -1,6 +1,7 @@
 'use strict';
 const { localDraftGate } = require('./chat-lane-policy');
 const { hasExecutionClaim } = require('./deepseek-fallback');
+const { fastlaneErrorFields } = require('./fastlane-provider');
 
 // Speculation owns no quota state, tools, planning or upstream products.
 function startL2Draft({ provider, text, history, deadlineAt, isCurrent, onAttempt, onTiming,
@@ -13,7 +14,10 @@ function startL2Draft({ provider, text, history, deadlineAt, isCurrent, onAttemp
   const flush = () => {
     if (!terminal || !buffered) return;
     const { row, emit } = buffered; buffered = null;
-    emit({ ...row, draftProvider: timing.draftProvider, draftMs: timing.draftMs, draftOutcome: timing.draftOutcome });
+    emit({ ...row, draftProvider: timing.draftProvider, draftMs: timing.draftMs, draftOutcome: timing.draftOutcome,
+      draftProviderErrorCategory: timing.draftProviderErrorCategory, draftProviderHttpStatus: timing.draftProviderHttpStatus,
+      draftCheckApproved: timing.draftCheckApproved, draftCheckNeedsUser: timing.draftCheckNeedsUser,
+      draftCheckIssuesCount: timing.draftCheckIssuesCount, draftCheckRejectReason: timing.draftCheckRejectReason });
   };
   const finish = reason => {
     if (terminal) return;
@@ -24,12 +28,30 @@ function startL2Draft({ provider, text, history, deadlineAt, isCurrent, onAttemp
   const pending = (async () => {
     try {
       return await provider(text, { history, deadlineAt, isCurrent, onAttempt, onTiming, signal: controller.signal,
-        deferTiming: (row, emit) => { timing.draftMs = row.totalMs; buffered = { row, emit }; flush(); } });
-    } catch { return { ok: false, failureReason: 'provider_error' }; }
+        deferTiming: (row, emit) => {
+          timing.draftMs = row.totalMs;
+          const fields = row.providerErrorCategory == null ? { providerErrorCategory: null, providerHttpStatus: null } : fastlaneErrorFields(row);
+          timing.draftProviderErrorCategory = fields.providerErrorCategory;
+          timing.draftProviderHttpStatus = fields.providerHttpStatus;
+          buffered = { row, emit }; flush();
+        } });
+    } catch (error) {
+      const fields = fastlaneErrorFields(error);
+      timing.draftProviderErrorCategory = fields.providerErrorCategory;
+      timing.draftProviderHttpStatus = fields.providerHttpStatus;
+      return { ok: false, failureReason: 'provider_error' };
+    }
   })();
   return {
     discard: (reason = 'discarded_needs_pipeline') => finish(reason),
     observe(stage, response) {
+      // The public admission schema has only ordinary; no needsUser/issues data
+      // exists here. Late checks update diagnostics without changing the exit.
+      if (stage === '独立普通回答核对') {
+        timing.draftCheckApproved = typeof response.value?.ordinary === 'boolean' ? response.value.ordinary : null;
+        timing.draftCheckRejectReason = !response.ok ? 'call_failed'
+          : timing.draftCheckApproved === null ? 'invalid_verdict' : timing.draftCheckApproved ? null : 'not_approved';
+      }
       if (terminal) return;
       // Public host's two existing strict no-tool admission contracts.
       const passed = response.ok && response.value?.ordinary === true;

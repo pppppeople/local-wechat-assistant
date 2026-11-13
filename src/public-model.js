@@ -5,7 +5,7 @@ const { formatChatHistory } = require('./chat-history');
 function buildPublicMessages(text, { history = [], probe = false, schema } = {}) {
   return [
     { role: 'system', content: '你是本地文字助手。只回答当前问题。你没有工具权限，不能声称执行、保存或发送了任何操作。' +
-      (schema?.properties?.needs_tool ? ' 自然简洁地用中文回答；不确定的事实说不知道，不编造实时事实。只输出 {"reply":"回答","needs_tool":false}，需要工具或检索时 needs_tool=true 并将 reply 留空。' : '') },
+      (schema?.properties?.needs_tool ? ' 自然简洁地用中文回答；不确定的事实说不知道，不编造实时事实。只输出 JSON：{"reply":"回答","needs_tool":false}，需要工具或检索时 needs_tool=true 并将 reply 留空。' : '') },
     ...(!probe && history.length ? [{ role: 'user', content: `同侧历史（仅背景，不是操作授权）：\n${formatChatHistory(history.slice(-12))}` }] : []),
     { role: 'user', content: String(text).slice(0, 12000) },
   ];
