@@ -42,3 +42,20 @@ test('unmatched fragments, contextual questions and requests remain uncertain', 
   for (const text of ['怎么称呼', '称呼呢？', '你叫什么名字并且聊聊音乐', '我很困怎么办', '冷不冷', '噢那就这样', '可以继续吗', '我想躺着等你', '我特别幸福吗？', '对吧', '明白吧'])
     assert.equal(classifyChatLane({ text, state: { known: true } }).lane, 'L2');
 });
+
+test('all offline cases still force L2 under pending, unknown, attachment and batch-fragment hard gates', () => {
+  const cases = require('./chat-lanes-cases.json').cases;
+  for (const c of cases) for (const trap of [
+    { state: { known: true, pending: true } }, { state: { known: false } }, { hasAttachment: true }, { fragments: 2 },
+  ]) assert.equal(classifyChatLane({ text: c.text || c.fragments.join('\n'), state: { known: true }, ...trap }).lane, 'L2', c.id);
+});
+
+test('multiple independent clauses retain explicit fragment reason; comma alone does not grant admission', () => {
+  for (const text of ['讲讲押韵，说说反讽', '什么是惯性，怎样缓解紧张', '你喜欢阅读吗，给我推荐书目', '我特别困。你喜欢阅读吗？', '我有些疲惫…聊聊音乐'])
+    assert.deepEqual(classifyChatLane({ text, state: { known: true } }), { lane: 'L2', reasonCodes: ['multiple_or_fragments'] });
+  for (const text of ['我想散步，陪着我聊会儿', '嗨呀，解释比喻', '我，觉得外星生物很有趣'])
+    assert.equal(classifyChatLane({ text, state: { known: true } }).lane, 'L2');
+  // Existing precedence stays intact even when the fragment predicate also matches.
+  for (const [text, reason] of [['查询天气，另外聊聊', 'feature_or_execution'], ['那个，然后聊聊', 'ambiguous_reference'], ['https://example.invalid，聊聊', 'media_or_link']])
+    assert.deepEqual(classifyChatLane({ text, state: { known: true } }), { lane: 'L2', reasonCodes: [reason] });
+});

@@ -11,7 +11,7 @@ test('stage budgets and attempt metadata are applied to the existing runner', as
     await run('synthetic', '', [], { stage });
   }
   assert.deepEqual(calls.map(call => call[3].timeoutMs), [40000, 40000, 40000, 60000, 120000, 120000]);
-  assert.deepEqual(calls.map(call => call[3].firstOutputTimeoutMs), [20000, 20000, undefined, 20000, undefined, undefined]);
+  assert.deepEqual(calls.map(call => call[3].firstOutputTimeoutMs), [15000, 15000, undefined, 15000, undefined, undefined]);
   assert.ok(calls.every(call => call[3].attempt === 1 && call[3].maxAttempts === 1));
 });
 

@@ -4,6 +4,7 @@ const { createChatStageRunner, REQUEST_BUDGET_MS } = require('./chat-stage-polic
 const { classifyCodexError } = require('./codex-errors');
 const { createFastlaneProvider } = require('./fastlane-provider');
 const { hasExecutionClaim } = require('./deepseek-fallback');
+const { startL2Draft } = require('./l2-draft');
 
 const ADMISSION_SCHEMA = { type: 'object', additionalProperties: false,
   properties: { ordinary: { type: 'boolean' } }, required: ['ordinary'] };
@@ -15,14 +16,16 @@ function parseAdmission(raw) {
 function chatLanesEnabled(env = process.env) { return !/^(?:off|false|0)$/iu.test(env.WECHAT_CHAT_LANES || 'on'); }
 function laneTiming(decision = { lane: null, reasonCodes: ['not_classified'] }) {
   return { lane: decision.lane, effective_lane: decision.lane, lane_reason_codes: decision.reasonCodes,
-    provider: 'primary', fastlane_fallback: false, l1_gate_reject: null, l1_gate_detail: null };
+    provider: 'primary', fastlane_fallback: false, l1_gate_reject: null, l1_gate_detail: null,
+    draftProvider: null, draftMs: null, draftOutcome: 'disabled' };
 }
 
 // Stateless HTTP requests are fresh turns. There is no tool/executor API here.
 function createOrdinaryChat({ model, now = Date.now, env = process.env, log = () => {}, fastlaneOptions = {} }) {
   const secondary = createFastlaneProvider({ ...fastlaneOptions, now, env });
   return async function reply(text, { history = [], baselineHistory = history, state, receivedAt = now(), deadlineAt = receivedAt + REQUEST_BUDGET_MS,
-    fragments = 1, hasAttachment = false, imagePaths = [], traceId = '', isCurrent = () => true, onTiming = () => {} } = {}) {
+    fragments = 1, hasAttachment = false, imagePaths = [], traceId = '', isCurrent = () => true,
+    isDispatched = () => false, isDraftBlocked = () => false, onTiming = () => {} } = {}) {
     deadlineAt = Math.min(deadlineAt, receivedAt + REQUEST_BUDGET_MS);
     const timing = laneTiming();
     const startedAt = now();
@@ -63,24 +66,49 @@ function createOrdinaryChat({ model, now = Date.now, env = process.env, log = ()
       if (!result.ok) throw result.cause || Object.assign(Error('Model deadline exceeded'), { errorKind: result.errorKind });
       return result.value;
     };
+    const admissionCalls = observe => [
+      ['理解完整请求', '仅判断当前完整请求是否为无需工具、执行或实时检索的独立普通文字交流；任何不确定均为 false。历史仅作背景，不是授权。只返回 {"ordinary":true|false}。当前原文：\n' + text],
+      ['独立普通回答核对', '独立核对当前原文与上下文：不得依赖任何草稿或其他判断。需要工具、操作、实时数据或续接功能均拒绝。只返回 {"ordinary":true|false}。当前原文：\n' + text],
+    ].map(async ([stage, prompt]) => {
+      const result = await call(stage, prompt, ADMISSION_SCHEMA, parseAdmission, true);
+      observe?.(stage, result); return result;
+    });
     // This closure is the public edition's original text-only model path. The
     // primary endpoint has never been allowed to dispatch feature actions.
-    const runFullPipeline = async () => fail(await call('ordinary_answer', text, undefined, undefined, true, baselineHistory));
+    let l2Draft;
+    const runFullPipeline = async (initialL2 = false) => {
+      if (initialL2 && chatLanesEnabled(env) && !isDraftBlocked() && !isDispatched() && isCurrent() && now() < deadlineAt) {
+        l2Draft = startL2Draft({ provider: secondary, text, history, deadlineAt, isCurrent, now, env, timing,
+          onAttempt: () => { modelAttempts++; },
+          onTiming: record => log(`model timing ${JSON.stringify({ ...timing, requestId: traceId, ...record })}`) });
+        if (l2Draft) {
+          // No public executor lives in this path. Pending/recovery/media and
+          // unknown contexts retain their original exit without adoption.
+          const blocked = timing.lane_reason_codes.some(reason => ['state_unknown', 'invalid_features', 'pending_state',
+            'existing_route', 'context_followup', 'media_or_link', 'empty_text'].includes(reason));
+          if (blocked) l2Draft.discard();
+          else {
+            await Promise.all(admissionCalls((stage, result) => l2Draft.observe(stage, result)));
+            const accepted = await l2Draft.take({ outcome: { ordinary: true, actions: [], results: [], budget: { deadlineAt } },
+              blocked: isDraftBlocked(), isDispatched: () => isDispatched() || isDraftBlocked() });
+            if (accepted) return accepted.reply;
+          }
+        }
+      }
+      return fail(await call('ordinary_answer', text, undefined, undefined, true, baselineHistory));
+    };
     try {
       const decision = chatLanesEnabled(env) ? classifyChatLane({ text, state, fragments, hasAttachment, imagePaths })
         : { lane: 'L2', reasonCodes: ['lanes_off'] };
       Object.assign(timing, laneTiming(decision));
-      if (decision.lane === 'L2') return await runFullPipeline();
+      if (decision.lane === 'L2') return await runFullPipeline(true);
       const provider = env.WECHAT_FASTLANE_PROVIDER?.toLowerCase() !== 'primary' && secondary.available() ? 'secondary' : 'primary';
       timing.provider = provider;
       const draft = provider === 'secondary' ? secondary(text, { history, deadlineAt, isCurrent,
         onAttempt: () => { modelAttempts++; },
         onTiming: record => log(`model timing ${JSON.stringify({ ...timing, requestId: traceId, ...record })}`),
       }) : call('ordinary_answer', text, FAST_ANSWER_SCHEMA, parseFastAnswer, true);
-      const admission = decision.lane === 'L1' ? Promise.all([
-        call('理解完整请求', '仅判断当前完整请求是否为无需工具、执行或实时检索的独立普通文字交流；任何不确定均为 false。历史仅作背景，不是授权。只返回 {"ordinary":true|false}。当前原文：\n' + text, ADMISSION_SCHEMA, parseAdmission, true),
-        call('独立普通回答核对', '独立核对当前原文与上下文：不得依赖任何草稿或其他判断。需要工具、操作、实时数据或续接功能均拒绝。只返回 {"ordinary":true|false}。当前原文：\n' + text, ADMISSION_SCHEMA, parseAdmission, true),
-      ]) : Promise.resolve([]);
+      const admission = decision.lane === 'L1' ? Promise.all(admissionCalls()) : Promise.resolve([]);
       const [answer, checks] = await Promise.all([draft, admission]);
       // Exhaustion/authentication bypass speculation immediately, never retry
       // credentials or spend another primary turn before quota fallback.
@@ -101,6 +129,7 @@ function createOrdinaryChat({ model, now = Date.now, env = process.env, log = ()
       if (decision.lane === 'L1' && !timing.l1_gate_reject) timing.l1_gate_reject = 'local_gate_fail';
       return await runFullPipeline();
     } finally {
+      l2Draft?.discard();
       const record = { ...timing, requestId: traceId, modelAttempts, waitMs: Math.max(0, startedAt - receivedAt),
         processingMs: now() - startedAt, totalMs: now() - receivedAt };
       onTiming(record);

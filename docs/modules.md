@@ -274,6 +274,7 @@ The modules and tests use generic `owner` / `friend` role keys and fictional exa
 
 - `ordinary-batch.js`: 1-second silence / 3.5-second first-fragment cap; wired into the durable single-owner ingress queue.
 - `chat-stage-policy.js`: 40/60/120-second stage limits, shared 150-second primary/dispatch deadline and explicitly pure-stage retry eligibility.
+- `l2-draft.js`: initial-L2 secondary speculation with independent primary admission, five adoption conditions, cancellation and additive draft timing; no tools or quota state. See [performance contract](chat-performance.md#initial-l2-speculative-draft).
 - `chat-lane-policy.js`: pure fail-closed lane classifier, strict fast-answer schema and local reply gate.
 - `chat-lane-state.js`: read-only enabled-host boolean probes; unknown/error forces L2.
 - `ordinary-chat-lanes.js`: L0 structured no-tool answer, L1 parallel draft/admission with two gates, original public text fallback and sanitized timing.

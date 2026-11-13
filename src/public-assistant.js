@@ -107,7 +107,8 @@ function createPublicAssistant({ runtime, model = null, helpText = HELP, now = (
           try { state = captureChatLaneState({ probes: probes(side, fallbackRequest), item, history }); }
           catch { state = { known: false }; }
         }
-        return ordinaryChat(input, { ...item, history, baselineHistory: fallback ? history : [], state });
+        return ordinaryChat(input, { ...item, history, baselineHistory: fallback ? history : [], state,
+          isDraftBlocked: () => fallback?.isExhausted() === true });
       };
       return fallback ? fallback.reply(fallbackRequest, generate) : generate(value);
     },

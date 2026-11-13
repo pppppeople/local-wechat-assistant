@@ -619,6 +619,215 @@
       ],
       "mustNotExecute": true,
       "recovery": true
+    },
+    {
+      "id": "comma_state",
+      "category": "comma_daily",
+      "text": "我，特别困呀！",
+      "lane": "L0",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_ack",
+      "category": "comma_daily",
+      "text": "了解，啦！",
+      "lane": "L0",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_confirm",
+      "category": "comma_daily",
+      "text": "没错，呀！",
+      "lane": "L0",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_laugh",
+      "category": "comma_daily",
+      "text": "嘿嘿，嘿嘿！",
+      "lane": "L0",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_greeting",
+      "category": "comma_daily",
+      "text": "嗨，呀！",
+      "lane": "L0",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_qa",
+      "category": "comma_daily",
+      "text": "为什么，海水是咸的？",
+      "lane": "L1",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_identity",
+      "category": "comma_daily",
+      "text": "你的名字，是什么呢？",
+      "lane": "L1",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_emotion",
+      "category": "comma_daily",
+      "text": "我觉得，散步很舒服。",
+      "lane": "L1",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_ascii",
+      "category": "comma_daily",
+      "text": "什么是,惯性？",
+      "lane": "L1",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_enumeration",
+      "category": "comma_daily",
+      "text": "你喜欢、阅读吗？",
+      "lane": "L1",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_two_requests",
+      "category": "comma_trap",
+      "text": "讲讲押韵，说说反讽",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_question_request",
+      "category": "comma_trap",
+      "text": "为什么猫喜欢睡觉，介绍散文",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_two_questions",
+      "category": "comma_trap",
+      "text": "什么是惯性，怎样缓解紧张",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_uncertain",
+      "category": "comma_trap",
+      "text": "我想散步，陪着我聊会儿",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_question_imperative",
+      "category": "comma_trap",
+      "text": "你喜欢阅读吗，给我推荐书目",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "comma_l0_plus_request",
+      "category": "comma_trap",
+      "text": "嗨呀，解释比喻",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "sentence_two_states",
+      "category": "comma_trap",
+      "text": "我特别困。你喜欢阅读吗？",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "ellipsis_pieces",
+      "category": "comma_trap",
+      "text": "我有些疲惫…聊聊音乐",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
+    },
+    {
+      "id": "newline_pieces",
+      "category": "comma_trap",
+      "text": "没错呀\n说说共情",
+      "lane": "L2",
+      "allowedTools": [],
+      "forbiddenTools": [
+        "*"
+      ],
+      "mustNotExecute": true
     }
   ]
 }

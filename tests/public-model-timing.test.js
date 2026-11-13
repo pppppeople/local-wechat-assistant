@@ -12,7 +12,7 @@ test('non-streaming HTTP adapter keeps full stage budget and records no observab
     bodies.push(JSON.parse(options.body));
     return { ok: true, json: async () => ({ choices: [{ message: { content: '合成回答' } }] }) };
   } });
-  assert.equal(await model('合成问题', { stage: 'ordinary_answer', timeoutMs: 60000, firstOutputTimeoutMs: 20000,
+  assert.equal(await model('合成问题', { stage: 'ordinary_answer', timeoutMs: 60000, firstOutputTimeoutMs: 15000,
     onTiming: record => timings.push(record) }), '合成回答');
   assert.deepEqual(timeouts, [60000]); assert.equal(bodies[0].stream, undefined);
   assert.deepEqual(timings, [{ timeoutReason: null, firstOutputWatchdog: false, firstOutputMs: null }]);
@@ -29,7 +29,7 @@ test('stage abort before headers or during JSON body is never labelled a first-o
       if (phase === 'headers') abort();
       return { ok: true, json: async () => abort() };
     } });
-    await assert.rejects(model('合成问题', { firstOutputTimeoutMs: 20000, onTiming: record => timings.push(record) }),
+    await assert.rejects(model('合成问题', { firstOutputTimeoutMs: 15000, onTiming: record => timings.push(record) }),
       error => error.errorKind === 'TRANSIENT' && error.timeoutReason === 'stage_budget');
     assert.equal(calls, 1);
     assert.deepEqual(timings, [{ timeoutReason: 'stage_budget', firstOutputWatchdog: false, firstOutputMs: null }]);

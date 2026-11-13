@@ -172,9 +172,9 @@ test('failed primary eligibility rejects a valid secondary draft; primary auth/q
   }
 });
 
-test('all existing L2 fixtures and lanes-off avoid secondary even when fully configured', async () => {
+test('L2 draft disabled and lanes-off avoid secondary even when fully configured', async () => {
   let secondaryCalls = 0;
-  const env = envConfig();
+  const env = { ...envConfig(), WECHAT_L2_DRAFT: 'off' };
   const run = createOrdinaryChat({ env, model: async () => '基线回答',
     fastlaneOptions: { fetchImpl: async () => { secondaryCalls++; return completion(); } } });
   for (const c of cases.filter(c => c.lane === 'L2')) {

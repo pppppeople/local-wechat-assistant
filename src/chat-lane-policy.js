@@ -19,6 +19,16 @@ const SHORT_SHAPES = [
   ['L1', 'identity_question', /^(?:你(?:是谁|叫什么(?:名字)?)|(?:该)?怎么称呼你|你的(?:名字|称呼)是什么)[啊呀呢？?！!。～~\s]*$/u],
 ];
 
+function multipleFragments(value) {
+  // Two nonempty sentence-ending/newline-separated pieces are multiple.
+  // Commas alone are not evidence. Keep explicit coordination cues; across
+  // commas require at least two recognizable question/request clause starts.
+  // Unrecognized comma text still has to match an entire existing whitelist.
+  return value.split(/[。！？!?；;…\r\n]+/u).filter(part => part.trim()).length > 1
+    || /然后|另外|顺便|同时|还有|并且|以及|先.+再/u.test(value)
+    || value.split(/[，,、]/u).filter(part => /^(?:请|说说|讲讲|解释|告诉我|帮忙|介绍|聊聊|分析|比较|给我|为什么|什么是|如何|怎样|怎么|你觉得|你喜欢)/u.test(part.trim())).length > 1;
+}
+
 function classifyChatLane({ text, state, imagePaths = [], hasAttachment = false, fragments = 1 } = {}) {
   const result = (lane, ...reasonCodes) => ({ lane, reasonCodes });
   if (!state || state.known !== true) return result('L2', 'state_unknown');
@@ -34,13 +44,16 @@ function classifyChatLane({ text, state, imagePaths = [], hasAttachment = false,
   if (INJECTION.test(value)) return result('L2', 'instruction_override');
   if (EXECUTION.test(value)) return result('L2', 'feature_or_execution');
   if (AMBIGUOUS.test(value)) return result('L2', 'ambiguous_reference');
-  if (fragments > 1 || /[\r\n]|然后|另外|顺便|同时|还有|并且|以及|先.+再|[；;]|[，,、].*\S/u.test(value)) return result('L2', 'multiple_or_fragments');
+  if (fragments > 1 || multipleFragments(value)) return result('L2', 'multiple_or_fragments');
   if (value.length > 100) return result('L2', 'long_or_uncertain');
   if (TEMPORAL.test(value)) return result('L2', 'numeric_or_temporal');
-  if (value.length <= 16 && L0.test(value)) return result('L0', 'smalltalk_whitelist');
-  if (L1.test(value)) return result('L1', 'self_contained_text');
+  // Ignore only comma separators when matching the SAME complete shapes.
+  // No arbitrary clauses or added words are admitted by punctuation removal.
+  const shapeValue = value.replace(/[，,、]/gu, '');
+  if (value.length <= 16 && L0.test(shapeValue)) return result('L0', 'smalltalk_whitelist');
+  if (L1.test(shapeValue)) return result('L1', 'self_contained_text');
   if (value.length <= 16) {
-    for (const [lane, reason, shape] of SHORT_SHAPES) if (shape.test(value)) return result(lane, reason);
+    for (const [lane, reason, shape] of SHORT_SHAPES) if (shape.test(shapeValue)) return result(lane, reason);
   }
   return result('L2', 'uncertain_text');
 }

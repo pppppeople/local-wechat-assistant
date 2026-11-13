@@ -10,7 +10,7 @@ const STAGE_TIMEOUTS = Object.freeze({
 });
 const PURE_STAGES = new Set(['理解完整请求', '独立普通回答核对', '独立语义核对', 'ordinary_answer']);
 
-const FIRST_OUTPUT_TIMEOUT_MS = 20000;
+const FIRST_OUTPUT_TIMEOUT_MS = 15000;
 const WATCHDOG_STAGES = new Set(['理解完整请求', '独立普通回答核对', 'ordinary_answer']);
 
 // Host policy only. The raw no-tool runner and the transport never replay turns.

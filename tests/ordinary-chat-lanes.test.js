@@ -34,8 +34,8 @@ for (const c of cases) test(`synthetic lane: ${c.id}`, async () => {
   assert.equal(typeof c.mustNotExecute, 'boolean');
   assert.ok(logs.every(line => !line.includes(text)));
 });
-test('evaluation has 40–60 cases and pending traps; structured answers reject extra fields', () => {
-  assert.ok(cases.length >= 40 && cases.length <= 60);
+test('evaluation has 71 cases and pending traps; structured answers reject extra fields', () => {
+  assert.ok(cases.length === 71);
   assert.ok(cases.filter(c => c.category === 'pending_trap').length >= 5);
   for (const raw of ['null', '[]', '{"reply":"a","needs_tool":false,"actions":[]}', '{"reply":"a"}']) assert.throws(() => parseFastAnswer(raw));
 });
@@ -183,7 +183,7 @@ for (const text of ['你好', '什么是光合作用？']) test(`watchdog-only d
     calls.push(options);
     if (!options.schema?.properties.needs_tool) return admit;
     if (++drafts === 1) {
-      clock += 20000;
+      clock += 15000;
       throw Object.assign(Error('synthetic timeout with private detail'), { errorKind: 'TRANSIENT', timeoutReason: 'first_output_watchdog' });
     }
     options.onTiming({ firstOutputMs: 120, prompt: 'must not be logged', timeoutReason: 'untrusted detail' });
@@ -192,7 +192,7 @@ for (const text of ['你好', '什么是光合作用？']) test(`watchdog-only d
   let final;
   assert.equal(await run(text, { state: known, receivedAt: 1000, onTiming: record => { final = record; } }), '合成文字回答');
   const draftCalls = calls.filter(c => c.schema?.properties.needs_tool);
-  assert.deepEqual(draftCalls.map(c => [c.attempt, c.maxAttempts, c.firstOutputTimeoutMs]), [[1, 2, 20000], [2, 2, 20000]]);
+  assert.deepEqual(draftCalls.map(c => [c.attempt, c.maxAttempts, c.firstOutputTimeoutMs]), [[1, 2, 15000], [2, 2, 15000]]);
   assert.equal(draftCalls[1].retryReason, 'TRANSIENT');
   assert.ok(calls.every(c => c.deadlineAt === 151000));
   assert.equal(final.fastlane_fallback, false); assert.equal(final.modelAttempts, text === '你好' ? 2 : 4);
